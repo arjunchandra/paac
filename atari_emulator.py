@@ -116,3 +116,11 @@ class AtariEmulator(BaseEnvironment):
 
     def get_noop(self):
         return [1.0, 0.0]
+
+    def reset_with_noops(self, noops=0):
+        observation = self.get_initial_state()
+        if noops != 0:
+            for _ in range(random.randint(0, noops)):
+                observation, _, _ = self.next(self.get_noop())
+        return observation
+

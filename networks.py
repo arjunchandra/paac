@@ -103,16 +103,19 @@ class Network(object):
 
         self.name = conf['name']
         self.num_actions = conf['num_actions']
+        self.clip_loss_delta = conf['clip_loss_delta']
         self.clip_norm = conf['clip_norm']
         self.clip_norm_type = conf['clip_norm_type']
         self.device = conf['device']
+        self.arch = conf['arch']
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
                 self.loss_scaling = 5.0
                 self.input_ph = tf.placeholder(tf.uint8, [None, 84, 84, 4], name='input')
-                self.selected_action_ph = tf.placeholder("float32", [None, self.num_actions], name="selected_action")
                 self.input = tf.scalar_mul(1.0/255.0, tf.cast(self.input_ph, tf.float32))
+                if "local_learning" in self.name:
+                    self.selected_action_ph = tf.placeholder("float32", [None, self.num_actions], name="selected_action")
 
                 # This class should never be used, must be subclassed
 
@@ -142,11 +145,11 @@ class NIPSNetwork(Network):
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
-                _, _, conv1 = conv2d('conv1', self.input, 16, 8, 4, 4)
+                self.w1, self.b1, conv1 = conv2d('conv1', self.input, 16, 8, 4, 4)
 
-                _, _, conv2 = conv2d('conv2', conv1, 32, 4, 16, 2)
+                self.w2, self.b2, conv2 = conv2d('conv2', conv1, 32, 4, 16, 2)
 
-                _, _, fc3 = fc('fc3', flatten(conv2), 256, activation="relu")
+                self.w3, self.b3, fc3 = fc('fc3', flatten(conv2), 256, activation="relu")
 
                 self.output = fc3
 
@@ -158,12 +161,12 @@ class NatureNetwork(Network):
 
         with tf.device(self.device):
             with tf.name_scope(self.name):
-                _, _, conv1 = conv2d('conv1', self.input, 32, 8, 4, 4)
+                self.w1, self.b1, conv1 = conv2d('conv1', self.input, 32, 8, 4, 4)
 
-                _, _, conv2 = conv2d('conv2', conv1, 64, 4, 32, 2)
+                self.w2, self.b2, conv2 = conv2d('conv2', conv1, 64, 4, 32, 2)
 
-                _, _, conv3 = conv2d('conv3', conv2, 64, 3, 64, 1)
+                self.w3, self.b3, conv3 = conv2d('conv3', conv2, 64, 3, 64, 1)
 
-                _, _, fc4 = fc('fc4', flatten(conv3), 512, activation="relu")
+                self.w4, self.b4, fc4 = fc('fc4', flatten(conv3), 512, activation="relu")
 
                 self.output = fc4
