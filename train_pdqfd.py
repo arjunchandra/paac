@@ -127,7 +127,8 @@ def get_arg_parser():
     parser.add_argument('--alg_type', default='value', help="Class of RL algorithms -- value, policy", dest="alg_type")
     parser.add_argument('--clip_loss', default=0.0, type=float, help="If bigger than 0.0, the loss will be clipped at +/-clip_loss. Default = 0.0", dest="clip_loss_delta")
     parser.add_argument("--target_update_freq", type=int, default=40000, help="number of iterations between every target network update", dest="target_update_freq")
-    
+    parser.add_argument("--batch_size", type=int, default=32, help="number of transitions to optimize at the same time")
+
     # Demo agent 
     parser.add_argument('-f', '--demo_agent_folder', type=str, help="Folder where demo agent is stored.", dest="demo_agent_folder", required=True)
     parser.add_argument('-tc', '--test_count', default='1', type=int, help="The amount of tests to run on the given network", dest="test_count")

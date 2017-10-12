@@ -179,25 +179,70 @@ class PDQFDLearner(ActorLearner):
         # Simple testing to see if states are stored correctly
         # test_state_transition(replay_buffer._storage[-5][0], replay_buffer._storage[-5][3])
 
-        # Use buffer data for pre-training
-
-        # Proceede collecting new experiences in buffer
-
-        # Train using the buffer without overwriting demo. When using demo data,
-        # do not mask the supervised loss.
 
         self.global_step = self.init_network()
 
         self.update_target()
-
-        logging.debug("Starting training at Step {}".format(self.global_step))
-
+        
         counter = 0
 
         global_step_start = self.global_step
+        
+
+        actions_sum = np.zeros((self.emulator_counts, self.num_actions))
+        y_batch = np.zeros((self.max_local_steps, self.emulator_counts))
+        rewards = np.zeros((self.max_local_steps, self.emulator_counts))
+        states = np.zeros([self.max_local_steps] + list(shared_states.shape), dtype=np.uint8)
+        actions = np.zeros((self.max_local_steps, self.emulator_counts, self.num_actions))
+        episodes_over_masks = np.zeros((self.max_local_steps, self.emulator_counts))
+
+
+        def get_trajectories_from_buffer():
+            if self.prioritized:
+                experience = replay_buffer.sample_nstep(self.batch_size, beta=beta_schedule.value(self.global_step), n_step=self.max_local_steps)
+                (__states_t, __actions, __rewards, __states_tp1, __dones, _weights, _batch_idxes, _mask_margin_loss) = experience
+            else:
+                experience = replay_buffer.sample_nstep(self.batch_size, n_step=self.max_local_steps)
+                (__states_t, __actions, __rewards, __states_tp1, __dones, _batch_idxes, _mask_margin_loss) = experience
+                _weights = np.ones((self.batch_size,))
+
+            return (np.transpose(__states_t, (1, 0, 2, 3, 4)), 
+                    np.squeeze(np.transpose(__actions, (1, 0, 2, 3)), axis=2), 
+                    np.transpose(__rewards), 
+                    np.transpose(__states_tp1, (1, 0, 2, 3, 4)), 
+                    np.transpose(__dones), 
+                    _weights, 
+                    _batch_idxes, 
+                    _mask_margin_loss)
+
+        # OPTIONS
+        # 1. Proceede collecting new experiences in buffer.
+        #    Train using the buffer without overwriting demo. When using demo data,
+        #    do not mask the supervised loss.
+        # OR
+        # 2. Train using parallel experiences from emulators. Mask the supervised loss.
+        # Choosing OPTION 2.
+
+        if self.demo:
+            logging.debug("Pre-training...")
+            for t in range(5):#self.pre_train_steps):
+                if t % 1000 == 0:
+                    logging.debug("Pre-training step {} of {} complete".format(str(t), str(self.pre_train_steps)))
+                (__states_t, __actions, __rewards, __states_tp1, __dones, _weights, _batch_idxes, _mask_margin_loss) = get_trajectories_from_buffer()
+                print(__states_t.shape, __actions.shape, __rewards.shape, __states_tp1.shape, __dones.shape, _weights.shape, len(_batch_idxes), len(_mask_margin_loss))
+                # e.g. with Atari Breakout env
+                # (5, 32, 84, 84, 4) (5, 32, 4) (5, 32) (5, 32, 84, 84, 4) (5, 32) (32,) 32 32                
+                # Estimate returns
+
+                # Create training batch
+                # Run training step with batch
+
+
+
+        logging.debug("Starting training at Step {}".format(self.global_step))
+
 
         total_rewards = []
-
 
         # state, reward, episode_over, action
         variables = [(np.asarray([emulator.get_initial_state() for emulator in self.emulators], dtype=np.uint8)),
@@ -214,16 +259,9 @@ class PDQFDLearner(ActorLearner):
         emulator_steps = [0] * self.emulator_counts
         total_episode_rewards = self.emulator_counts * [0]
 
-        actions_sum = np.zeros((self.emulator_counts, self.num_actions))
-        y_batch = np.zeros((self.max_local_steps, self.emulator_counts))
-        rewards = np.zeros((self.max_local_steps, self.emulator_counts))
-        states = np.zeros([self.max_local_steps] + list(shared_states.shape), dtype=np.uint8)
-        actions = np.zeros((self.max_local_steps, self.emulator_counts, self.num_actions))
-        episodes_over_masks = np.zeros((self.max_local_steps, self.emulator_counts))
-
         start_time = time.time()
 
-        while self.global_step < self.max_global_steps:
+        while self.global_step < self.max_global_steps:# - self.pre_train_steps:
 
             loop_start_time = time.time()
 
@@ -263,6 +301,7 @@ class PDQFDLearner(ActorLearner):
                         emulator_steps[e] = 0
                         actions_sum[e] = np.zeros(self.num_actions)
 
+            # >>>>>>>>>> Functional block
             nest_state_maxq = self.__get_target_maxq_values(shared_states)
 
             estimated_return = np.copy(nest_state_maxq)
@@ -290,6 +329,7 @@ class PDQFDLearner(ActorLearner):
             self.summary_writer.flush()
 
             counter += 1
+            # >>>>>>>>>> Functional block
 
             if counter % (2048 / self.emulator_counts) == 0:
                 curr_time = time.time()

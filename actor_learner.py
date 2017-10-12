@@ -38,6 +38,7 @@ class ActorLearner(Process):
         self.max_global_steps = args.max_global_steps
         self.gamma = args.gamma
         self.game = args.game
+        self.batch_size = args.batch_size # = self.emulator_counts
         self.alg_type = args.alg_type
         if self.alg_type == 'value':
             self.target_network = network_creator(name='value_local_target')
