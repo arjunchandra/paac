@@ -114,7 +114,7 @@ class PDQFDLearner(ActorLearner):
         else:
             replay_buffer = ReplayBuffer(self.replay_buffer_size, self.demo_trans_size)
 
-        # Fill replay buffer with demo data -------------------
+        # Fill replay buffer with demo data
         if self.demo_db is not None:
             logging.debug("Adding demonstration data from db to replay buffer.")
             hdf5_file = tables.open_file(args.demo_db, mode='r')
@@ -147,26 +147,24 @@ class PDQFDLearner(ActorLearner):
             # Create demo agent and environment creation handlers
             demo_network_creator, demo_env_creator = get_network_and_environment_creator(self.demo_args)
             demo_network = demo_network_creator(name="local_learning")
+            
             # Instantiate saver to restore demo agent params 
             saver = tf.train.Saver(var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='local_learning'))
+            
             # Create "single" instance of environment
             environment = demo_env_creator.create_environment(0)
     
             config = tf.ConfigProto()
             if 'gpu' in self.device:
                 config.gpu_options.allow_growth = True
+            
             # Create session, load params, run agent and fill buffer
             with tf.Session(config=config) as demo_sess:
                 checkpoints_ = os.path.join(df, 'checkpoints')
                 demo_network.init(checkpoints_, saver, demo_sess)
                 
                 state = environment.reset_with_noops(self.noops)
-                # state = np.asarray(environment.get_initial_state())
-                next_state = np.zeros_like(state)
-                # if self.noops != 0:
-                #     for _ in range(random.randint(0, self.noops)):
-                #         state, _, _ = environment.next(environment.get_noop())
-    
+                next_state = np.zeros_like(state)    
                 for demo_data_counter in range(1, self.demo_trans_size + 1):
                     action, _, _ = PAACLearner.choose_next_actions(demo_network, demo_env_creator.num_actions, np.expand_dims(state, axis=0), demo_sess)
                     next_state, reward, done = environment.next(action)
@@ -176,10 +174,6 @@ class PDQFDLearner(ActorLearner):
                         logging.debug("Added {} of {} demo transitions".format(str(demo_data_counter), str(self.demo_trans_size))) # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
                     if done:
                         state = environment.reset_with_noops(self.noops)
-                        # state = np.asarray(environment.get_initial_state())
-                        # if self.noops != 0:
-                        #     for _ in range(random.randint(0, self.noops)):
-                        #         state, _, _ = environment.next(environment.get_noop())
 
         logging.debug("Demonstration data ready to use in buffer.")
         # Simple testing to see if states are stored correctly
