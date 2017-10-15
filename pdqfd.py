@@ -182,7 +182,8 @@ class PDQFDLearner(ActorLearner):
             for demo_data_counter in range(1, self.demo_trans_size + 1):
                 action, _, _ = PAACLearner.choose_next_actions(demo_network, demo_env_creator.num_actions, np.expand_dims(state, axis=0), demo_sess)
                 next_state, reward, done = environment.next(action)
-                self.replay_buffer.add(state, action, reward, next_state, done)
+                actual_reward = self.rescale_reward(reward)
+                self.replay_buffer.add(state, action, actual_reward, next_state, done)
                 np.copyto(state, next_state)
                 if demo_data_counter % 1000 == 0 and demo_data_counter != 0:
                     logging.debug("Added {} of {} demo transitions".format(str(demo_data_counter), str(self.demo_trans_size))) # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
