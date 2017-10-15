@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import logging
 
 from segment_tree import SumSegmentTree, MinSegmentTree
 
@@ -85,20 +86,26 @@ class ReplayBuffer(object):
                     rewards.append(reward)
                     obses_tp1.append(np.array(obs_tp1, copy=False))
                     dones.append(done)
-                    data_tp1 = self._storage[_k]
+                    
+                    # NB. Below is a workaround to fit with OpenAI baselines.
+                    # It should not be reached under the parallel training (PAAC) 
+                    # regimen because the replay buffer only contains demo data, and 
+                    # storage is therefore not cyclic ~ not overwritten = no abrupt ends.   
                     # abrupt end (demo overshoot, s_this' != s_next)
-                    if ((data[5] != data_tp1[5] and _j != j_last) or 
-                        (i < self._demosize and _k >= self._demosize)):
-                        # fill with zeros
-                        fill_span = n_step - step # j_last - _j
-                        obses_t.extend([np.zeros_like(obs_t)] * fill_span)
-                        actions.extend([np.zeros_like(action)] * fill_span)
-                        rewards.extend([0.] * fill_span)
-                        obses_tp1.extend([np.zeros_like(obs_tp1)] * fill_span)
-                        dones.extend([1] * fill_span)              
-                        break
-                    else:
-                        step += 1
+                    if len(self._storage) > self._demosize:
+                        data_tp1 = self._storage[_k]
+                        if ((data[5] != data_tp1[5] and _j != j_last) or 
+                            (i < self._demosize and _k >= self._demosize)):
+                            # fill with zeros and ones accordingly
+                            fill_span = n_step - step # j_last - _j
+                            obses_t.extend([np.zeros_like(obs_t)] * fill_span)
+                            actions.extend([np.zeros_like(action)] * fill_span)
+                            rewards.extend([0.] * fill_span)
+                            obses_tp1.extend([np.zeros_like(obs_tp1)] * fill_span)
+                            dones.extend([1] * fill_span)              
+                            break
+
+                    step += 1
                 n_step_obses_t.append(np.array(obses_t, copy=False))
                 n_step_actions.append(np.array(actions, copy=False))
                 n_step_rewards.append(np.array(rewards, copy=False))
@@ -245,7 +252,7 @@ class ReplayBuffer(object):
             n_step_done_mask[i] = 1 if trajectory sampled reaches 
             the end of an episode, and 0 otherwise.
         """
-        idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
+        idxes = [random.randint(0, len(self._storage) - n_step - 1) for _ in range(batch_size)]
         encoded_trajectory = self._encode_full_trajectory(idxes, n_step)
         demo_selfgen = [1. if id < self._demosize else 0. for id in idxes]
         return tuple(list(encoded_trajectory) + [idxes, demo_selfgen])
@@ -290,11 +297,11 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._it_sum[idx] = self._max_priority ** self._alpha
         self._it_min[idx] = self._max_priority ** self._alpha
 
-    def _sample_proportional(self, batch_size):
+    def _sample_proportional(self, batch_size, n_step=0):
         res = []
         for _ in range(batch_size):
             # TODO(szymon): should we ensure no repeats?
-            mass = random.random() * self._it_sum.sum(0, len(self._storage) - 1)
+            mass = random.random() * self._it_sum.sum(0, len(self._storage) - n_step - 1)
             idx = self._it_sum.find_prefixsum_idx(mass)
             res.append(idx)
         return res
@@ -404,7 +411,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         """
         assert beta > 0
 
-        idxes = self._sample_proportional(batch_size)
+        idxes = self._sample_proportional(batch_size, n_step)
 
         weights = []
         p_min = self._it_min.min() / self._it_sum.sum()
