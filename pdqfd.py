@@ -185,7 +185,8 @@ class PDQFDLearner(ActorLearner):
                 actual_reward = self.rescale_reward(reward)
                 self.replay_buffer.add(state, action, actual_reward, next_state, done)
                 np.copyto(state, next_state)
-                if demo_data_counter % 1000 == 0 and demo_data_counter != 0:
+                if ((demo_data_counter % 1000 == 0 and demo_data_counter != 0) 
+                    or (demo_data_counter == self.demo_trans_size)):
                     logging.debug("Added {} of {} demo transitions".format(str(demo_data_counter), str(self.demo_trans_size))) # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
                 if done:
                     state = environment.reset_with_noops(self.noops)
@@ -253,7 +254,7 @@ class PDQFDLearner(ActorLearner):
 
 
     def batched_demo_training(self):
-        batched_steps = self.max_local_steps * self.emulator_counts
+        batched_steps = self.max_local_steps * self.batch_size
         (__s_t, __a, __r, __s_tp1, __dones, _w, _idx, _m) = self.get_trajectories_from_buffer()
         # print(__s_t.shape, __a.shape, __r.shape, __s_tp1.shape, __dones.shape, _w.shape, len(_idx), len(_m))
         # e.g. with Atari Breakout env, steps 5, batch size 32
@@ -276,17 +277,18 @@ class PDQFDLearner(ActorLearner):
         self.global_step = self.init_network()
         global_step_start = self.global_step
 
-        self.update_target()
+        # self.update_target()
         
         self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.uint8)
 
         # Pre-train using demonstration data
-        if self.demo:
+        batched_steps = self.max_local_steps * self.batch_size
+        if self.demo and self.global_step < self.pre_train_steps * batched_steps:
             logging.debug("Pre-training...")
-            batched_steps = self.max_local_steps * self.emulator_counts
-            for t in range(batched_steps, self.pre_train_steps, batched_steps):
+            resume_step = int(self.global_step / batched_steps)
+            for t in range(resume_step, self.pre_train_steps):
                 if t % 1000 == 0:
-                    logging.debug("Pre-training step {} of {} complete".format(str(t), str(self.pre_train_steps)))
+                    logging.debug("Pre-training batch step {} of {} complete".format(str(t), str(self.pre_train_steps)))
                 
                 self.batched_demo_training()
                 
@@ -371,7 +373,7 @@ class PDQFDLearner(ActorLearner):
                 self.estimate_returns(next_state_maxq)
                 self.run_train_step(mask_margin=0.0)
 
-            if self.global_step % self.target_update_freq == 0:
+            if int(self.global_step / batched_steps) % self.target_update_freq == 0:
                 self.update_target()
 
             if self.counter % (2048 / self.emulator_counts) == 0:
