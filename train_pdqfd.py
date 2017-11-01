@@ -137,7 +137,7 @@ def get_arg_parser():
     parser.add_argument('-np', '--noops', default=30, type=int, help="Maximum amount of no-ops to use", dest="noops")
     parser.add_argument('-se', '--serial_episodes', default='10', type=int, help="Number of serial episodes", dest="serial_episodes")
 
-
+    parser.add_argument('--experiment_type', default='corridor', type=str, help="Class of environments to experiment with, e.g. atari, corridor, etc.", dest="experiment_type")
     return parser
 
 
