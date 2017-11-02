@@ -148,7 +148,6 @@ class SimplePDQFDLearner(ActorLearner):
         df = self.demo_agent_folder
         checkpoints_ = os.path.join(df, 'checkpoints')
         run_demo_agent(checkpoint_folder, self.replay_buffer, self.demo_trans_size)
-        tf.reset_default_graph()
 
     def init_buffer_with_demo(self):
         logging.debug("Adding demonstration data from demo agent to replay buffer.")

@@ -231,7 +231,7 @@ def run_demo_agent(path, replay_buffer, demo_trans_size):
 
     # with tf.device(''/cpu:0''):
         # with tf.name_scope('demo_agent'):
-    tf.reset_default_graph()
+    # tf.reset_default_graph()
     mainQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)
     
     init = tf.global_variables_initializer()
