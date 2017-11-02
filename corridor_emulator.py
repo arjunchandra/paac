@@ -804,3 +804,16 @@ class GymEnvironment(BaseEnvironment):
         if self.visualize:
             self.env.render()
         return s_t1, r_t, terminal #, info
+
+    def get_noop(self):
+        if self.game in ['CorridorActionTest-v1']:
+            return 8
+        elif:
+            return 4
+
+    def reset_with_noops(self, noops=0):
+        s = self.get_initial_state()
+        if noops != 0:
+            for _ in range(random.randint(0, noops)):
+                s, _, _ = self.next(self.get_noop())
+        return s

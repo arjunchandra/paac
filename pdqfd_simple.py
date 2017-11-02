@@ -11,8 +11,9 @@ import numpy as np
 
 from schedules import LinearSchedule, PiecewiseSchedule
 from replay_buffer import *
-from paac import PAACLearner
-from train import get_network_and_environment_creator
+# from paac import PAACLearner
+# from train import get_network_and_environment_creator
+from demo_agent_corridor import *
 import logger_utils
 import tables
 from misc_utils import LazyFrames
@@ -143,7 +144,11 @@ class SimplePDQFDLearner(ActorLearner):
 
 
     def init_buffer_with_demo_simple(self):
-        pass
+        logging.debug("Adding demonstration data from demo agent to replay buffer.")
+        df = self.demo_agent_folder
+        checkpoints_ = os.path.join(df, 'checkpoints')
+        run_demo_agent(checkpoint_folder, self.replay_buffer, self.demo_trans_size)
+        tf.reset_default_graph()
 
     def init_buffer_with_demo(self):
         logging.debug("Adding demonstration data from demo agent to replay buffer.")
@@ -276,7 +281,8 @@ class SimplePDQFDLearner(ActorLearner):
         if self.demo_db is not None:
             self.init_buffer_with_db()
         else:
-            self.init_buffer_with_demo()
+            # self.init_buffer_with_demo()
+            self.init_buffer_with_demo_simple()
 
         self.global_step = self.init_network()
         global_step_start = self.global_step
