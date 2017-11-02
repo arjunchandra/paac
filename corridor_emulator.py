@@ -770,7 +770,9 @@ class GymEnvironment(BaseEnvironment):
 
         self.agent_history_length = agent_history_length
 
-        self.gym_actions = list(range(self.env.action_space.n))
+        self.num_actions = self.env.action_space.n
+
+        self.gym_actions = list(range(self.num_actions))
         self.visualize = visualize
         
         self.grid_shape = self.desc.shape
@@ -808,7 +810,7 @@ class GymEnvironment(BaseEnvironment):
     def get_noop(self):
         if self.game in ['CorridorActionTest-v1']:
             return 8
-        elif:
+        else:
             return 4
 
     def reset_with_noops(self, noops=0):

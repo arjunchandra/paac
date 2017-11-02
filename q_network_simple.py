@@ -36,10 +36,19 @@ def fc_bias_variable(shape, input_channels, name, init= "torch"):
 
 class SimpleQNetwork(object):
     def __init__(self, conf):
+
+        self.name = conf['name']
+        self.num_actions = conf['num_actions']
+        self.clip_loss_delta = conf['clip_loss_delta']
+        self.clip_norm = conf['clip_norm']
+        self.clip_norm_type = conf['clip_norm_type']
+        self.device = conf['device']
+        self.arch = conf['arch']
+
         self.input_shape = 64
         # self.hiddens = [50, 50] 
         self.num_actions = 4
-        self.dueling_type= 'avg', 
+        self.dueling_type= 'avg' 
         self.layer_norm=False
         
         with tf.device(self.device):
@@ -53,7 +62,7 @@ class SimpleQNetwork(object):
                 self.w2, self.b2, fc2 = fc('fc2', fc1, 50, activation="relu")
 
                 self.w3_a, self.b3_a, self.advantage = fc('adv_f', fc2, self.num_actions, activation="linear")
-                self.w3_v, self.w3_v, self.value = fc('value_f', fc2, 1, activation="linear")
+                self.w3_v, self.b3_v, self.value = fc('value_f', fc2, 1, activation="linear")
             
                 # self.Advantage = layers.fully_connected(out, num_outputs=self.num_actions, activation_fn=None)
                 # self.Value = layers.fully_connected(out, num_outputs=1, activation_fn=None)

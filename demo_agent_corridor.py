@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.style.use('ggplot')
 from pylab import rcParams
-from corridor_environments import *
+from corridor_emulator import *
 
 # Plot out the values the critic gives for the agent being in
 # a specific state, i.e. in a specific location in the env.
@@ -131,38 +131,39 @@ def plot_value_function(sess, q_max, v_func, input_ph, env):
 
 class Qnetwork():
     def __init__(self, input_shape, hiddens, num_actions, dueling_type='avg', layer_norm=False):
+        with tf.device('/cpu:0'):
+            with tf.name_scope('corridor_demo_agent'):        
+                self.input =  tf.placeholder(shape= (None, np.prod(input_shape)),dtype=tf.float32)
+                out = self.input
+                for hidden in hiddens:
+                    out = layers.fully_connected(out, num_outputs=hidden, activation_fn=None)
+                    if layer_norm:
+                        out = layers.layer_norm(out, center=True, scale=True)
+                    out = tf.nn.relu(out)
+                
+                self.Advantage = layers.fully_connected(out, num_outputs=num_actions, activation_fn=None)
+                self.Value = layers.fully_connected(out, num_outputs=1, activation_fn=None)
         
-        self.input =  tf.placeholder(shape= (None, np.prod(input_shape)),dtype=tf.float32)
-        out = self.input
-        for hidden in hiddens:
-            out = layers.fully_connected(out, num_outputs=hidden, activation_fn=None)
-            if layer_norm:
-                out = layers.layer_norm(out, center=True, scale=True)
-            out = tf.nn.relu(out)
-        
-        self.Advantage = layers.fully_connected(out, num_outputs=num_actions, activation_fn=None)
-        self.Value = layers.fully_connected(out, num_outputs=1, activation_fn=None)
-
-        if dueling_type == 'avg':
-            self.Qout = self.Value + tf.subtract(self.Advantage,tf.reduce_mean(self.Advantage,axis=1,keep_dims=True))
-        elif dueling_type == 'max':
-            self.Qout = self.Value + tf.subtract(self.Advantage,tf.reduce_max(self.Advantage,axis=1,keep_dims=True))
-        else:
-            assert False, "dueling_type must be one of {'avg','max'}"        
-        
-        self.predict = tf.argmax(self.Qout,1)
-        
-        #Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
-        self.targetQ = tf.placeholder(shape=[None],dtype=tf.float32)
-        self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
-        self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
-        
-        self.Q = tf.reduce_sum(tf.multiply(self.Qout, self.actions_onehot), axis=1)
-        
-        self.td_error = tf.square(self.targetQ - self.Q)
-        self.loss = tf.reduce_mean(self.td_error)
-        self.trainer = tf.train.AdamOptimizer(learning_rate=0.0001)
-        self.updateModel = self.trainer.minimize(self.loss)
+                if dueling_type == 'avg':
+                    self.Qout = self.Value + tf.subtract(self.Advantage,tf.reduce_mean(self.Advantage,axis=1,keep_dims=True))
+                elif dueling_type == 'max':
+                    self.Qout = self.Value + tf.subtract(self.Advantage,tf.reduce_max(self.Advantage,axis=1,keep_dims=True))
+                else:
+                    assert False, "dueling_type must be one of {'avg','max'}"        
+                
+                self.predict = tf.argmax(self.Qout,1)
+                
+                #Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
+                self.targetQ = tf.placeholder(shape=[None],dtype=tf.float32)
+                self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
+                self.actions_onehot = tf.one_hot(self.actions,num_actions,dtype=tf.float32)
+                
+                self.Q = tf.reduce_sum(tf.multiply(self.Qout, self.actions_onehot), axis=1)
+                
+                self.td_error = tf.square(self.targetQ - self.Q)
+                self.loss = tf.reduce_mean(self.td_error)
+                self.trainer = tf.train.AdamOptimizer(learning_rate=0.0001)
+                self.updateModel = self.trainer.minimize(self.loss)
 
 class experience_buffer():
     def __init__(self, buffer_size = 50000):
@@ -225,36 +226,49 @@ def run_demo_agent(path, replay_buffer, demo_trans_size):
             9:('CorridorFLNonSkid-v1', CorridorEnv)
         }
     env_id = 9
-    env = GymEnvironment(envs[env_id][0], env_class = envs[env_id][1], visualize = False, agent_history_length=1)
+    env = GymEnvironment(-1, envs[env_id][0], env_class = envs[env_id][1], visualize = False, agent_history_length=1)
     num_actions = env.env.action_space.n
     input_shape = list(env.env.observation_space.shape)
+    hiddens = [50, 50]
 
     # with tf.device(''/cpu:0''):
         # with tf.name_scope('demo_agent'):
     # tf.reset_default_graph()
     mainQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)
+    targetQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False) # not used but needed to restore
     
     init = tf.global_variables_initializer()
-    saver = tf.train.Saver()
 
+    # var_list=[v for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES) if all(s not in v.name for s in ['local_learning', 'local_target'])]
+    var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='corridor_demo_agent')
+
+    # print(var_list)
+    saver = tf.train.Saver(var_list=var_list)
+    state = env.get_initial_state().flatten()
+    state_shape = state.shape
     with tf.Session() as sess:
         sess.run(init)
         print('Loading Model...')
         ckpt = tf.train.get_checkpoint_state(path)
+        # print(ckpt.model_checkpoint_path)
         saver.restore(sess, ckpt.model_checkpoint_path)
 
-        state = env.reset().flatten()
+        
         for demo_data_counter in range(1, demo_trans_size + 1):
-            action = sess.run(mainQN.predict,feed_dict={mainQN.input:[s]})[0]
-            next_state, reward, done = env.step(a)
+            action = sess.run(mainQN.predict,feed_dict={mainQN.input:[state]})[0]
+            next_state, reward, done = env.next(action)
+            one_hot_action = np.eye(num_actions)[action]
             next_state = next_state.flatten()
-            replay_buffer.add(state, action, reward, next_state, done)
+            # print(state, action, reward, next_state, done)
+            replay_buffer.add(state, one_hot_action, reward, next_state, done)
             np.copyto(state, next_state)
             if ((demo_data_counter % 1000 == 0 and demo_data_counter != 0) 
                 or (demo_data_counter == demo_trans_size)):
-                logging.debug("Added {} of {} demo transitions".format(str(demo_data_counter), str(self.demo_trans_size))) # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
+                print("Added {} of {} demo transitions".format(str(demo_data_counter), str(demo_trans_size))) # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
             if done:
-                state = env.reset().flatten()          
+                state = env.get_initial_state().flatten()          
+    return state_shape
+
 
 def train_agent(): 
     batch_size = 32 #How many experiences to use for each training step.

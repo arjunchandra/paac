@@ -53,6 +53,7 @@ def setup_kill_signal_handler(learner):
 def get_network_and_environment_creator(args, random_seed=3):
     env_creator = environment_creator.EnvironmentCreator(args)
     num_actions = env_creator.num_actions
+    print(num_actions)
     args.num_actions = num_actions
     args.random_seed = random_seed
 

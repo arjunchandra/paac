@@ -27,7 +27,7 @@ def test_state_transition(o_t, o_tp1):
 
 class SimplePDQFDLearner(ActorLearner):
     def __init__(self, network_creator, environment_creator, args):
-        super(PDQFDLearner, self).__init__(network_creator, environment_creator, args)
+        super(SimplePDQFDLearner, self).__init__(network_creator, environment_creator, args)
         self.workers = args.emulator_workers
         self.stochastic = args.stochastic
         self.prioritized = args.prioritized
@@ -65,12 +65,14 @@ class SimplePDQFDLearner(ActorLearner):
         self.state_shape = None
         self.counter = 0
 
+        self.experiment_type = args.experiment_type
+
     @staticmethod
     def choose_next_actions(network, num_actions, states, session, eps, stochastic):
         network_output_q = session.run(network.output_layer_q, 
             feed_dict={network.input_ph: states})
 
-        action_indices = PDQFDLearner.__sample_policy_action(network_output_q, num_actions, eps, stochastic)
+        action_indices = SimplePDQFDLearner.__sample_policy_action(network_output_q, num_actions, eps, stochastic)
 
         new_actions = np.eye(num_actions)[action_indices]
 
@@ -87,10 +89,10 @@ class SimplePDQFDLearner(ActorLearner):
 
     def __choose_next_actions(self, states):
         eps = self.exp_epsilon.value(self.global_step)
-        return PDQFDLearner.choose_next_actions(self.network, self.num_actions, states, self.session, eps, self.stochastic)
+        return SimplePDQFDLearner.choose_next_actions(self.network, self.num_actions, states, self.session, eps, self.stochastic)
 
     def __get_target_maxq_values(self, states):
-        return PDQFDLearner.get_maxq_values(self.target_network, states, self.session)
+        return SimplePDQFDLearner.get_maxq_values(self.target_network, states, self.session)
 
     @staticmethod
     def __sample_policy_action(q_values, num_actions, eps, stochastic):
@@ -146,8 +148,9 @@ class SimplePDQFDLearner(ActorLearner):
     def init_buffer_with_demo_simple(self):
         logging.debug("Adding demonstration data from demo agent to replay buffer.")
         df = self.demo_agent_folder
-        checkpoints_ = os.path.join(df, 'checkpoints')
-        run_demo_agent(checkpoint_folder, self.replay_buffer, self.demo_trans_size)
+        checkpoint_folder = os.path.join(df, 'checkpoints')
+        state_shape = run_demo_agent(checkpoint_folder, self.replay_buffer, self.demo_trans_size)
+        self.state_shape = state_shape
 
     def init_buffer_with_demo(self):
         logging.debug("Adding demonstration data from demo agent to replay buffer.")
@@ -212,14 +215,24 @@ class SimplePDQFDLearner(ActorLearner):
             (__states_t, __actions, __rewards, __states_tp1, __dones, _batch_idxes, _mask_margin_loss) = experience
             _weights = np.ones((self.batch_size,))
 
-        return (np.transpose(__states_t, (1, 0, 2, 3, 4)), 
-                np.squeeze(np.transpose(__actions, (1, 0, 2, 3)), axis=2), 
-                np.transpose(__rewards), 
-                np.transpose(__states_tp1, (1, 0, 2, 3, 4)), 
-                np.transpose(__dones), 
-                _weights, 
-                _batch_idxes, 
-                _mask_margin_loss)
+        if self.experiment_type == 'atari':
+            return (np.transpose(__states_t, (1, 0, 2, 3, 4)), 
+                    np.squeeze(np.transpose(__actions, (1, 0, 2, 3)), axis=2), 
+                    np.transpose(__rewards), 
+                    np.transpose(__states_tp1, (1, 0, 2, 3, 4)), 
+                    np.transpose(__dones), 
+                    _weights, 
+                    _batch_idxes, 
+                    _mask_margin_loss)
+        else: # corridor
+            return (np.transpose(__states_t, (1, 0, 2)), 
+                    np.transpose(__actions, (1, 0, 2)), 
+                    np.transpose(__rewards), 
+                    np.transpose(__states_tp1, (1, 0, 2)), 
+                    np.transpose(__dones), 
+                    _weights, 
+                    _batch_idxes, 
+                    _mask_margin_loss)
 
     def estimate_returns(self, next_state_maxq):
         estimated_return = np.copy(next_state_maxq)
@@ -288,7 +301,7 @@ class SimplePDQFDLearner(ActorLearner):
 
         # self.update_target()
         
-        self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.uint8)
+        self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.float64)
 
         # Pre-train using demonstration data
         batched_steps = self.max_local_steps * self.batch_size
@@ -318,7 +331,7 @@ class SimplePDQFDLearner(ActorLearner):
         logging.debug("Resuming training from emulators at Step {}".format(self.global_step))
         total_rewards = []
         # state, reward, episode_over, action
-        variables = [(np.asarray([emulator.get_initial_state() for emulator in self.emulators], dtype=np.uint8)),
+        variables = [(np.asarray([emulator.get_initial_state() for emulator in self.emulators], dtype=np.float64)),
                      (np.zeros(self.emulator_counts, dtype=np.float32)),
                      (np.asarray([False] * self.emulator_counts, dtype=np.float32)),
                      (np.zeros((self.emulator_counts, self.num_actions), dtype=np.float32))]
