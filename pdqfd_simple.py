@@ -139,10 +139,10 @@ class SimplePDQFDLearner(ActorLearner):
             idx_best_action_from_learning_network = np.argmax(learning_network_q, axis=1)
             maxq_values = target_network_q[range(target_network_q.shape[0]), idx_best_action_from_learning_network]
 
-            print("learning_network_q ", learning_network_q)
-            print("idx_best_action_from_learning_network ", idx_best_action_from_learning_network)
-            print("target_network_q", target_network_q)
-            print("maxq_values ", maxq_values)
+            #print("learning_network_q ", learning_network_q)
+            #print("idx_best_action_from_learning_network ", idx_best_action_from_learning_network)
+            #print("target_network_q", target_network_q)
+            #print("maxq_values ", maxq_values)
         else:
             target_network_q = session.run(target_network.output_layer_q,
                                            feed_dict={target_network.input_ph: states})
@@ -318,10 +318,10 @@ class SimplePDQFDLearner(ActorLearner):
              self.network.loss, self.summaries_op],
             feed_dict=feed_dict)
 
-        print("output_layer_q ", output_layer_q.shape, output_layer_q)
-        print("output_selected_action ", output_selected_action.shape, output_selected_action)
-        print("td_error ", td_error.shape, td_error)
-        print("loss ", loss)
+        #print("output_layer_q ", output_layer_q.shape, output_layer_q)
+        #print("output_selected_action ", output_selected_action.shape, output_selected_action)
+        #print("td_error ", td_error.shape, td_error)
+        #print("loss ", loss)
 
         self.summary_writer.add_summary(summaries, self.global_step)
         self.summary_writer.flush()
@@ -332,19 +332,19 @@ class SimplePDQFDLearner(ActorLearner):
     def train_from_replay_buffer(self, mask_margin=0.0):
         #batched_steps = self.max_local_steps * self.emulator_counts
         (s_t, a, r, s_tp1, dones, w, idx, m) = self.get_trajectories_from_buffer()
-        # print(__s_t.shape, __a.shape, __r.shape, __s_tp1.shape, __dones.shape, _w.shape, len(_idx), len(_m))
+        # #print(__s_t.shape, __a.shape, __r.shape, __s_tp1.shape, __dones.shape, _w.shape, len(_idx), len(_m))
         # e.g. with Atari Breakout env, steps 5, batch size 32
         # (5, 32, 84, 84, 4) (5, 32, 4) (5, 32) (5, 32, 84, 84, 4) (5, 32) (32,) 32 32
-        #print(s_t.shape, a.shape, r.shape, dones.shape)
+        ##print(s_t.shape, a.shape, r.shape, dones.shape)
 
         for i in range(s_t.shape[0]):
             x = []
             for j in range(s_t.shape[1]):
                 x.append(np.argmax(s_t[i, j, :].flatten()))
                 pass
-            print("FROM BUFFER: St: ", x)
+            #print("FROM BUFFER: St: ", x)
             pass
-        print("FROM BUFFER: Actions ", a)
+        #print("FROM BUFFER: Actions ", a)
         # Calculate returns for all trajectories
         s_tpn = s_tp1[:, -1, :]
         #n = self.batch_size if self.use_exp_replay else self.emulator_counts
@@ -357,9 +357,9 @@ class SimplePDQFDLearner(ActorLearner):
         #np.copyto(self.episode_dones, dones)
 
         targets = self.estimate_returns(next_state_maxq, r, dones)
-        print("Epi masks ", 1.0 - dones.astype(np.float32))
-        print("Rewards ", r)
-        print("Targets ", targets)
+        #print("Epi masks ", 1.0 - dones.astype(np.float32))
+        #print("Rewards ", r)
+        #print("Targets ", targets)
         #if np.max(r)==1:
         #    sys.exit(0)
         self.run_train_step(s_t, a, targets, mask_margin=mask_margin)
@@ -429,18 +429,19 @@ class SimplePDQFDLearner(ActorLearner):
                 for t in range((self.max_local_steps)):
                     s.append(np.argmax(self.states[t,emu].flatten()))
                     pass
-                print("TO BUFFER: States: ", s)
-                print("TO BUFFER: Actions: ", self.actions[:, emu])
+                #print("TO BUFFER: States: ", s)
+                #print("TO BUFFER: Actions: ", self.actions[:, emu])
 
                 for t in range((self.max_local_steps -1)):
                     self.replay_buffer.add(np.copy(self.states[t, emu]), np.copy(self.actions[t, emu]), np.copy(self.rewards[t, emu]),
                                            np.copy(self.states[t + 1, emu]), np.copy(self.episode_dones[t, emu]))
-                    #print("TO BUFFER: Action: ", self.actions[t, emu])
-                self.states[0, emu] = np.zeros_like(self.states[0, emu])
+                    ##print("TO BUFFER: Action: ", self.actions[t, emu])
+                #self.states[0, emu] = np.zeros_like(self.states[0, emu])
+
                 t = self.max_local_steps - 1 # Obs! Subtract 1 due to zero-based indexing
                 self.replay_buffer.add(np.copy(self.states[t, emu]), np.copy(self.actions[t, emu]), np.copy(self.rewards[t, emu]),
                                        np.copy(shared_states[emu]), np.copy(self.episode_dones[t, emu]))
-                #print("TO BUFFER: Action: ", self.actions[t, emu])
+                ##print("TO BUFFER: Action: ", self.actions[t, emu])
 
     def train(self):
         """
@@ -553,7 +554,7 @@ class SimplePDQFDLearner(ActorLearner):
     
                 if self.global_step > self.learning_start:
                     self.train_from_experience(shared_states)
-                    print(self.global_step)
+                    #print(self.global_step)
                     #sys.exit(0)
 
             #if self.continuous_target_update or int(self.global_step / batched_steps) % self.target_update_freq == 0:
