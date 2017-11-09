@@ -767,7 +767,7 @@ class GymEnvironment(BaseEnvironment):
                             max_episode_seconds=self.env.spec.max_episode_seconds)
         self.env = ProcessObservation(self.env)
         self.env = ObsStack(self.env, agent_history_length)
-        #self.env.seed(seed * (actor_id + 1))
+        self.env.seed(seed * (actor_id + 1))
 
         self.agent_history_length = agent_history_length
 
