@@ -65,13 +65,14 @@ def get_network_and_environment_creator(args, random_seed=3):
                     'clip_loss_delta': args.clip_loss_delta,
                     'clip_norm': args.clip_norm,
                     'clip_norm_type': args.clip_norm_type,
-                    'arch': args.arch}
+                    'arch': args.arch,
+                    'target_update_tau': args.target_update_tau}
     if args.arch == 'NIPS':
         network = NIPSQNetwork
     else:
         network = NatureQNetwork
 
-    def network_creator(name='value_local_learning'):
+    def network_creator(name='value_learning'):
         nonlocal network_conf
         copied_network_conf = copy.copy(network_conf)
         copied_network_conf['name'] = name
@@ -127,6 +128,8 @@ def get_arg_parser():
     parser.add_argument('--alg_type', default='value', help="Class of RL algorithms -- value, policy", dest="alg_type")
     parser.add_argument('--clip_loss', default=0.0, type=float, help="If bigger than 0.0, the loss will be clipped at +/-clip_loss. Default = 0.0", dest="clip_loss_delta")
     parser.add_argument("--target_update_freq", type=int, default=10000, help="number of iterations between every target network update", dest="target_update_freq")
+    parser.add_argument("--target_update_tau", type=float, default=0.001,
+                        help="tau for soft target netwok update: q_target_param = tau*q_learning_param + (1-tau)*q_target_param", dest="target_update_tau")
     parser.add_argument("--batch_size", type=int, default=32, help="number of transitions to optimize at the same time")
     # Extra argument -- not in original DQfD
     parser.add_argument('--demo_train_ratio', default=0.2, type=float, help="Demo/Emulator training ratio", dest="demo_train_ratio")

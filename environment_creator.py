@@ -14,6 +14,7 @@ class EnvironmentCreator(object):
             ale_int = ALEInterface()
             ale_int.loadROM(str.encode(filename))
             self.num_actions = len(ale_int.getMinimalActionSet())
+            self.state_shape = (84, 84, 4)
             self.create_environment = lambda i: AtariEmulator(i, args)
         
         elif args.experiment_type == 'corridor':
@@ -31,5 +32,8 @@ class EnvironmentCreator(object):
             
             corridor_game_id = args.game
             corridor_class = corridor_envs[args.game]
-            self.num_actions = GymEnvironment(-1, corridor_game_id, corridor_class).num_actions
-            self.create_environment = lambda i: GymEnvironment(i, corridor_game_id, corridor_class)
+            env = GymEnvironment(-1, corridor_game_id, args.random_seed, env_class=corridor_class)
+            self.num_actions = env.num_actions
+            self.state_shape = env.env.observation_space.shape
+            del env
+            self.create_environment = lambda i: GymEnvironment(i, corridor_game_id, args.random_seed, env_class=corridor_class)

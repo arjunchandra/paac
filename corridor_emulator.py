@@ -6,7 +6,7 @@ import numpy as np
 import sys
 import pdb
 from pdb import set_trace as bp
-
+import random
 try:
     from io import StringIO
 except ImportError:
@@ -752,7 +752,7 @@ except:
 
    
 class GymEnvironment(BaseEnvironment):
-    def __init__(self, actor_id, game, env_class=None, visualize = False, agent_history_length = 1, random_start=False):
+    def __init__(self, actor_id, game, seed, env_class=None, visualize = False, agent_history_length = 1, random_start=False):
         try:
             self.env = gym.make(game)
             self.desc = self.env.env.desc
@@ -767,6 +767,7 @@ class GymEnvironment(BaseEnvironment):
                             max_episode_seconds=self.env.spec.max_episode_seconds)
         self.env = ProcessObservation(self.env)
         self.env = ObsStack(self.env, agent_history_length)
+        #self.env.seed(seed * (actor_id + 1))
 
         self.agent_history_length = agent_history_length
 
@@ -778,6 +779,8 @@ class GymEnvironment(BaseEnvironment):
         self.grid_shape = self.desc.shape
         
         self.game = game
+
+        self.np_random, seed = seeding.np_random(seed)
         
     
     def get_legal_actions(self):
@@ -801,8 +804,9 @@ class GymEnvironment(BaseEnvironment):
     def visualize_off(self):
         self.visualize = False
     
-    def next(self, action_index):
-        s_t1, r_t, terminal, info = self.env.step(self.gym_actions[action_index])
+    def next(self, action):
+        #s_t1, r_t, terminal, info = self.env.step(self.gym_actions[np.argmax(action)])
+        s_t1, r_t, terminal, info = self.env.step(action)
         if self.visualize:
             self.env.render()
         return s_t1, r_t, terminal #, info
@@ -813,9 +817,12 @@ class GymEnvironment(BaseEnvironment):
         else:
             return 4
 
+    def reset(self):
+        return self.reset_with_noops(0)
+
     def reset_with_noops(self, noops=0):
         s = self.get_initial_state()
         if noops != 0:
-            for _ in range(random.randint(0, noops)):
+            for _ in range(self.np_random.randint(0, noops)):
                 s, _, _ = self.next(self.get_noop())
         return s

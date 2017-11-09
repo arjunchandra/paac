@@ -1,5 +1,5 @@
 from multiprocessing import Process
-
+import numpy as np
 
 class EmulatorRunner(Process):
 
@@ -22,6 +22,7 @@ class EmulatorRunner(Process):
             if instruction is None:
                 break
             for i, (emulator, action) in enumerate(zip(self.emulators, self.variables[-1])):
+                #print("Emulator: EXECUTE ACTION: ", np.argmax(action))
                 new_s, reward, episode_over = emulator.next(action)
                 if episode_over:
                     self.variables[0][i] = emulator.get_initial_state()
@@ -29,6 +30,7 @@ class EmulatorRunner(Process):
                     self.variables[0][i] = new_s
                 self.variables[1][i] = reward
                 self.variables[2][i] = episode_over
+                #print("Emulator: NEW STATE & Done:", np.argmax(self.variables[0][i].flatten()), episode_over)
             count += 1
             self.barrier.put(True)
 

@@ -1,9 +1,12 @@
 import numpy as np
 from multiprocessing import Process
 import tensorflow as tf
-import logging
 from logger_utils import variable_summaries
 import os
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
 
 CHECKPOINT_INTERVAL = 1000000
  
@@ -14,9 +17,14 @@ class ActorLearner(Process):
         
         super(ActorLearner, self).__init__()
 
+        tf.reset_default_graph()
+
+        self.workers = args.emulator_workers
+
         self.global_step = 0
 
         self.max_local_steps = args.max_local_steps
+        self.state_shape = environment_creator.state_shape
         self.num_actions = args.num_actions
         self.initial_lr = args.initial_lr
         self.lr_annealing_steps = args.lr_annealing_steps
@@ -30,7 +38,10 @@ class ActorLearner(Process):
 
         self.learning_rate = tf.placeholder(tf.float32, shape=[])
         optimizer_variable_names = 'OptimizerVariables'
-        self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=args.alpha, epsilon=args.e,
+        if args.optimizer == "adam":
+            self.optimizer = tf.train.AdamOptimizer(self.learning_rate, name=optimizer_variable_names)
+        else:
+            self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate, decay=args.alpha, epsilon=args.e,
                                                    name=optimizer_variable_names)
 
         self.emulators = np.asarray([environment_creator.create_environment(i)
@@ -38,29 +49,15 @@ class ActorLearner(Process):
         self.max_global_steps = args.max_global_steps
         self.gamma = args.gamma
         self.game = args.game
-        self.batch_size = args.batch_size # = self.emulator_counts
+
         self.alg_type = args.alg_type
         if self.alg_type == 'value':
-            self.target_network = network_creator(name='value_local_target')
+            self.network = network_creator(name='value_learning')
+            self.target_network = network_creator(name='value_target', learning_network=self.network)
             self.target_update_freq = args.target_update_freq
-            # Replay buffer
-            self.replay_buffer_size = args.replay_buffer_size
-            # Prioritized replay
-            self.prioritized_alpha = args.prioritized_alpha
-            self.prioritized_beta0 = args.prioritized_beta0
-            self.prioritized_eps = args.prioritized_eps
-            self.network = network_creator(name='value_local_learning')
         else:
             self.network = network_creator(name='local_learning')
-        
-        if args.demo:
-            self.demo = args.demo
-            self.demo_db = args.demo_db
-            self.demo_trans_size = args.demo_trans_size
-            self.demo_model_dir = args.demo_model_dir
-            self.pre_train_steps = args.pre_train_steps
-            self.prioritized_eps_d = args.prioritized_eps_d
-        
+
 
         # Optimizer
         grads_and_vars = self.optimizer.compute_gradients(self.network.loss, self.network.params)
@@ -93,39 +90,31 @@ class ActorLearner(Process):
 
         config = tf.ConfigProto()
         if 'gpu' in self.device:
-            logging.debug('Dynamic gpu mem allocation')
+            logger.debug('Dynamic gpu mem allocation')
             config.gpu_options.allow_growth = True
 
         self.session = tf.Session(config=config)
 
-        if self.alg_type == 'value':
-            self.network_variables = [var for var in tf.global_variables() if any(s in var.name for s in ['value_local_target', 'value_local_learning'])]
-            # self.network_variables = [v for v in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) if all(s in v.name for s in ['value_local_target', 'value_local_learning'])]
-            self.network_saver = tf.train.Saver(var_list=self.network_variables)
-            # self.learning_network_saver = tf.train.Saver(var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='value_local_learning'))
-            # self.target_network_saver = tf.train.Saver(var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='value_local_target'))
-        else:
-            self.network_saver = tf.train.Saver()
-
-        self.optimizer_variables = [var for var in tf.global_variables() if optimizer_variable_names in var.name]
-        self.optimizer_saver = tf.train.Saver(self.optimizer_variables, max_to_keep=1, name='OptimizerSaver')
+        # if self.alg_type == 'value':
+        #     self.network_saver = tf.train.Saver(self.network.params + self.target_network.params)
+        # else:
+        #     self.network_saver = tf.train.Saver(self.network.params)
+        #
+        # self.optimizer_variables = [var for var in tf.global_variables() if optimizer_variable_names in var.name]
+        # self.optimizer_saver = tf.train.Saver(self.optimizer_variables, max_to_keep=1, name='OptimizerSaver')
+        self.network_saver = tf.train.Saver()
 
         # Summaries
         variable_summaries(self.flat_raw_gradients, 'raw_gradients')
         variable_summaries(self.flat_clipped_gradients, 'clipped_gradients')
         tf.summary.scalar('global_norm', global_norm)
+        tf.summary.scalar("TD_loss", self.network.td_loss)
 
     def save_vars(self, force=False):
         if force or self.global_step - self.last_saving_step >= CHECKPOINT_INTERVAL:
             self.last_saving_step = self.global_step
-            # if self.alg_type == 'value':
-
-            #     self.learning_network_saver.save(self.session, self.network_checkpoint_folder, global_step=self.last_saving_step)
-            #     self.target_network_saver.save(self.session, self.network_checkpoint_folder, global_step=self.last_saving_step)
-            # else:
             self.network_saver.save(self.session, self.network_checkpoint_folder, global_step=self.last_saving_step)
-
-            self.optimizer_saver.save(self.session, self.optimizer_checkpoint_folder, global_step=self.last_saving_step)
+            #self.optimizer_saver.save(self.session, self.optimizer_checkpoint_folder, global_step=self.last_saving_step)
 
 
     def rescale_reward(self, reward):
@@ -143,29 +132,22 @@ class ActorLearner(Process):
         if not os.path.exists(self.optimizer_checkpoint_folder):
             os.makedirs(self.optimizer_checkpoint_folder)
 
-        # if self.alg_type == 'value':
-        #     last_saving_step = self.network.init(self.network_checkpoint_folder, self.learning_network_saver, self.session)
-        #     last_saving_step = self.target_network.init(self.network_checkpoint_folder, self.target_network_saver, self.session)
-            
-        # else:
-        last_saving_step = self.network.init(self.network_checkpoint_folder, self.network_saver, self.session)
-        # Redundant
-        last_saving_step = self.target_network.init(self.network_checkpoint_folder, self.network_saver, self.session)
+        # Since we only save and restore network trainable variables and optimizer variables, we always need to
+        # initialize the other variables
+        self.session.run(tf.global_variables_initializer())
 
-        path = tf.train.latest_checkpoint(self.optimizer_checkpoint_folder)
-        if path is not None:
-            logging.info('Restoring optimizer variables from previous run')
-            self.optimizer_saver.restore(self.session, path)
+        # This should restore both the local/learning network and the target network
+        last_saving_step = self.network.init(self.network_checkpoint_folder, self.network_saver, self.session)
+
+#        if self.alg_type == 'value':
+#            self.target_network.init(self.network_checkpoint_folder, self.network_saver, self.session)
+
+        #path = tf.train.latest_checkpoint(self.optimizer_checkpoint_folder)
+        #if path is not None:
+        #    logger.info('Restoring optimizer variables from previous run')
+        #    self.optimizer_saver.restore(self.session, path)
 
         return last_saving_step
-
-    def update_target(self):
-        params = self.network.get_params(self.session)
-        feed_dict = {}
-        for i in range(len(self.target_network.params)):
-            feed_dict[self.target_network.params_ph[i]] = params[i]
-        self.target_network.set_params(feed_dict, self.session)
-
 
     def get_lr(self):
         if self.global_step <= self.lr_annealing_steps:

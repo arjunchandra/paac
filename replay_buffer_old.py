@@ -46,12 +46,6 @@ class ReplayBuffer(object):
         else:
             self._next_idx += 1
 
-        # print("ADDING TO BUFFER: State", np.argmax(self._storage[-1][0].flatten()))
-        # s = []
-        # for i in range(len(self._storage)):
-        #     s.append(np.argmax(self._storage[i][0].flatten()))
-        # print("STATES IN BUFFER: ", s)
-
     def _encode_sample(self, idxes):
         obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
         for i in idxes:
@@ -87,10 +81,10 @@ class ReplayBuffer(object):
                    
                     data = self._storage[_j]
                     obs_t, action, reward, obs_tp1, done, traj_id = data
-                    obses_t.append(obs_t)
-                    actions.append(action)
+                    obses_t.append(np.array(obs_t, copy=False))
+                    actions.append(np.array(action, copy=False))
                     rewards.append(reward)
-                    obses_tp1.append(obs_tp1)
+                    obses_tp1.append(np.array(obs_tp1, copy=False))
                     dones.append(done)
                     
                     # NB. Below is a workaround to fit with OpenAI baselines.
@@ -112,14 +106,14 @@ class ReplayBuffer(object):
                             break
 
                     step += 1
-                n_step_obses_t.append(np.stack(obses_t))
+                n_step_obses_t.append(np.array(obses_t, copy=False))
                 n_step_actions.append(np.array(actions, copy=False))
                 n_step_rewards.append(np.array(rewards, copy=False))
-                n_step_obses_tp1.append(np.stack(obses_tp1))
+                n_step_obses_tp1.append(np.array(obses_tp1, copy=False))
                 n_step_dones.append(np.array(dones, copy=False))
             except IndexError:
                 print("Something funky happened accessing replay storage.")
-        #print("Inside buffer: ", np.array(n_step_obses_t).shape)
+        print("Inside buffer: ", np.array(n_step_obses_t).shape)
         return np.array(n_step_obses_t), np.array(n_step_actions), np.array(n_step_rewards), np.array(n_step_obses_tp1), np.array(n_step_dones)
 
     def _encode_trajectory(self, idxes, n_step):
@@ -258,11 +252,6 @@ class ReplayBuffer(object):
             n_step_done_mask[i] = 1 if trajectory sampled reaches 
             the end of an episode, and 0 otherwise.
         """
-        # s=[]
-        # for i in range(len(self._storage)):
-        #     s.append(np.argmax(self._storage[i][0].flatten()))
-        # print("STATES IN BUFFER: ", s)
-
         idxes = [random.randint(0, len(self._storage) - n_step - 1) for _ in range(batch_size)]
         encoded_trajectory = self._encode_full_trajectory(idxes, n_step)
         demo_data = [1. if id < self._demosize else 0. for id in idxes]
