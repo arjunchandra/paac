@@ -58,7 +58,7 @@ def get_network_and_environment_creator(args, random_seed=3):
     env_creator = environment_creator.EnvironmentCreator(args)
     num_actions = env_creator.num_actions
     args.num_actions = num_actions
-    
+    print(env_creator.state_shape)
     network_conf = {'num_actions': num_actions,
                     'expert_margin': args.expert_margin,
                     'margin_loss_coeff': args.margin_loss_coeff,
@@ -68,6 +68,9 @@ def get_network_and_environment_creator(args, random_seed=3):
                     'clip_norm': args.clip_norm,
                     'clip_norm_type': args.clip_norm_type,
                     'arch': args.arch,
+                    'mlp_hiddens': args.mlp_hiddens,
+                    'layer_norm': args.layer_norm,
+                    'input_shape': env_creator.state_shape,
                     'target_update_tau': args.target_update_tau,
                     'continuous_target_update': args.continuous_target_update}
     
@@ -99,7 +102,11 @@ def get_arg_parser():
     parser.add_argument('--gamma', default=0.99, type=float, help="Discount factor", dest="gamma")
     parser.add_argument('--max_global_steps', default=80000000, type=int, help="Max. number of training steps", dest="max_global_steps")
     parser.add_argument('--max_local_steps', default=5, type=int, help="Number of steps to gain experience from before every update.", dest="max_local_steps")
-    parser.add_argument('--arch', default='FF_corridor', help="Which network architecture to use: from the NIPS or NATURE paper", dest="arch")
+    parser.add_argument('--arch', default='mlp', help="Which network architecture to use: MLP, Deepmind's NIPS or NATURE", dest="arch")
+    parser.add_argument('--mlp_hiddens', default='[50, 50]',
+                        help="Hidden layers for MLP", dest="mlp_hiddens")
+    boolean_flag(parser, "layer_norm", default=False, help="whether or not to use layer normalization")
+
     parser.add_argument('--single_life_episodes', default=False, type=bool_arg, help="If True, training episodes will be terminated when a life is lost (for games)", dest="single_life_episodes")
     parser.add_argument('-ec', '--emulator_counts', default=32, type=int, help="The amount of emulators per agent. Default is 32.", dest="emulator_counts")
     parser.add_argument('-ew', '--emulator_workers', default=8, type=int, help="The amount of emulator workers per agent. Default is 8.", dest="emulator_workers")
@@ -125,7 +132,7 @@ def get_arg_parser():
     parser.add_argument('--L2_reg_coeff', default=1e-5, type=float, help="l2 regularisation coefficient", dest="L2_reg_coeff")
     #parser.add_argument("--n_step_loss_coeff", type=float, default=1.0, help="n-step loss coefficient")
     parser.add_argument("--expert_margin", type=float, default=0.8, help="margin with which expert action values to be above other values", dest="expert_margin")
-    parser.add_argument("--prioritized_eps_d", type=float, default=1.0, help="eps parameter for demo transitions in prioritized replay buffer")
+    parser.add_argument("--prioritized_eps_d", type=float, default=1.0, help="eps parameter for demo transitions in prioritized replay buffer", dest="prioritized_eps_d")
     #parser.add_argument("--n_step", type=int, default=int(10), help="number of steps agent to look ahead for returns")
     parser.add_argument('--exp_epsilon', default=1, type=float, help="Epsilon for epsilon greedy exploration", dest="exp_epsilon")
     parser.add_argument('--alg_type', default='value', help="Class of RL algorithms -- value, policy", dest="alg_type")
@@ -146,6 +153,7 @@ def get_arg_parser():
     parser.add_argument('-se', '--serial_episodes', default='10', type=int, help="Number of serial episodes", dest="serial_episodes")
 
     parser.add_argument('--experiment_type', default='corridor', type=str, help="Class of environments to experiment with, e.g. atari, corridor, etc.", dest="experiment_type")
+    boolean_flag(parser, "debug", default=False, help="Whether or not to print debug messages")
     return parser
 
 

@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 matplotlib.style.use('ggplot')
 from pylab import rcParams
 from corridor_emulator import *
-
+import pickle
+import gym
 
 # Plot out the values the critic gives for the agent being in
 # a specific state, i.e. in a specific location in the env.
@@ -196,27 +197,24 @@ def updateTarget(op_holder, sess):
         sess.run(op)
 
 
-def evaluate(env, sess, q_max, input_ph, visualize=False, v_func=None):
+def evaluate(env, sess, q_max, input_ph, visualize=False, v_func=None, goal_reward = 1):
     if visualize:
         assert (v_func is not None), "Need v_func to visualize the value function"
         env.visualize_on()
         plot_value_function(sess, q_max, v_func, input_ph, env)
-    else:
-        env.visualize_off()
-    succ_epi = 0
+    #else:
+    #    env.visualize_off()
     acc_rew = 0
     for _epi in range(1, 101):
         _s = env.reset()  # .flatten()
         _d = False
         while not _d:
             _a = sess.run(q_max, feed_dict={input_ph: [_s]})[0]
-            _s1, _r, _d = env.next(np.argmax(_a))
+            _s1, _r, _d, _ = env.step(np.argmax(_a))
             _s = _s1  # .flatten()
             acc_rew += _r
-        succ_epi += 1 if _r == 1 else 0
-    succ_epi = succ_epi * 100.0 / _epi
 
-    return succ_epi, acc_rew
+    return (1.0 * acc_rew) / goal_reward
 
 
 def run_demo_agent(path, replay_buffer, demo_trans_size):
@@ -237,57 +235,58 @@ def run_demo_agent(path, replay_buffer, demo_trans_size):
     input_shape = list(env.env.observation_space.shape)
     hiddens = [50, 50]
 
-    # with tf.device(''/cpu:0''):
-    # with tf.name_scope('demo_agent'):
-    # tf.reset_default_graph()
-    mainQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)
-    targetQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)  # not used but needed to restore
+    g_1 = tf.Graph()
+    with g_1.as_default():
 
-    init = tf.global_variables_initializer()
+        mainQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)
+        targetQN = Qnetwork(input_shape, hiddens, num_actions, layer_norm=False)  # not used but needed to restore
 
-    # var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='corridor_demo_agent')
-    var_list = [var for var in tf.trainable_variables() if 'fully_connected' in var.name]
-    # print(var_list)
-    saver = tf.train.Saver(var_list=var_list)
-    state = env.get_initial_state()
-    state_shape = state.shape
-    visited_init_states = [np.argmax(state.flatten())]
-    with tf.Session() as sess:
-        sess.run(init)
-        print('Loading Model...')
-        ckpt = tf.train.get_checkpoint_state(path)
-        # print(ckpt.model_checkpoint_path)
-        saver.restore(sess, ckpt.model_checkpoint_path)
+        init = tf.global_variables_initializer()
 
-        for demo_data_counter in range(1, demo_trans_size + 1):
-            action = sess.run(mainQN.predict, feed_dict={mainQN.input: [state.flatten()]})[0]
-            action = np.eye(num_actions)[action]
-            next_state, reward, done = env.next(action)
-            # next_state = next_state.flatten()
-            # print(state, action, reward, next_state, done)
-            replay_buffer.add(state, action, reward, next_state, done)
-            np.copyto(state, next_state)
-            if ((demo_data_counter % 1000 == 0 and demo_data_counter != 0)
-                or (demo_data_counter == demo_trans_size)):
-                print("Added {} of {} demo transitions".format(str(demo_data_counter), str(
-                    demo_trans_size)))  # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
-            if done:
-                while True:
-                    state = env.get_initial_state()
-                    if len(visited_init_states) > 52:  # All possible initial states have been already visited
-                        break
-                    id = np.argmax(state.flatten())
-                    if not id in visited_init_states:
-                        visited_init_states.append(id)
-                        break
-                        # print(len(visited_init_states))
-                        # print("ADDINGTO BUFFER:", state.shape, one_hot_action.shape)
-                        # return state_shape
+        # var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='corridor_demo_agent')
+        var_list = [var for var in tf.trainable_variables() if 'fully_connected' in var.name]
+        # print(var_list)
+        saver = tf.train.Saver(var_list=var_list)
+        state = env.reset()
+        state_shape = state.shape
+        visited_init_states = [np.argmax(state.flatten())]
+        with tf.Session() as sess:
+            sess.run(init)
+            print('Loading Model...')
+            path = os.path.join(path, 'checkpoints')
+            ckpt = tf.train.get_checkpoint_state(path)
+            # print(ckpt.model_checkpoint_path)
+            saver.restore(sess, ckpt.model_checkpoint_path)
+
+            for demo_data_counter in range(1, demo_trans_size + 1):
+                action = sess.run(mainQN.predict, feed_dict={mainQN.input: [state.flatten()]})[0]
+                #action = np.eye(num_actions)[action]
+                next_state, reward, done, _ = env.step(action)
+                # next_state = next_state.flatten()
+                # print(state, action, reward, next_state, done)
+                replay_buffer.add_demo(np.copy(state), action, reward, np.copy(next_state), done)
+                np.copyto(state, next_state)
+                if ((demo_data_counter % 1000 == 0 and demo_data_counter != 0)
+                    or (demo_data_counter == demo_trans_size)):
+                    print("Added {} of {} demo transitions".format(str(demo_data_counter), str(
+                        demo_trans_size)))  # + str() + " of " + str(args.demo_trans_size) + " demo transitions")
+                if done:
+                    while True:
+                        state = env.reset()
+                        if len(visited_init_states) > 52:  # All possible initial states have been already visited
+                            break
+                        id = np.argmax(state.flatten())
+                        if not id in visited_init_states:
+                            visited_init_states.append(id)
+                            break
+                            # print(len(visited_init_states))
+                            # print("ADDINGTO BUFFER:", state.shape, one_hot_action.shape)
+                            # return state_shape
 
 
 def train_agent():
-    batch_size = 32  # How many experiences to use for each training step.
-    update_freq = 4  # How often to perform a training step.
+    batch_size = 64  # How many experiences to use for each training step.
+    update_freq = 1  # How often to perform a training step.
     y = .99  # Discount factor on the target Q-values
     startE = 1  # Starting chance of random action
     endE = 0  # 0.1 #Final chance of random action
@@ -305,21 +304,35 @@ def train_agent():
         6: ('CorridorActionTest-v0', CorridorEnv),
         7: ('CorridorActionTest-v1', ComplexActionSetCorridorEnv),
         8: ('CorridorBig-v0', CorridorEnv),
-        9: ('CorridorFLNonSkid-v1', CorridorEnv)
+        9: ('CorridorFLNonSkid-v1', CorridorEnv),
+        10: ('CartPole-v1', None)
     }
     env_id = 9
-    env = GymEnvironment(envs[env_id][0], 3, env_class=envs[env_id][1], visualize=False, agent_history_length=1)
-    env2 = GymEnvironment(envs[env_id][0], 4, env_class=envs[env_id][1], visualize=False, agent_history_length=1)
-    num_actions = env.env.action_space.n
-    input_shape = list(env.env.observation_space.shape)
+
+    if env_id in [10]:
+        env = gym.make(envs[env_id][0])
+        env2 = gym.make(envs[env_id][0])
+        num_actions = env.action_space.n
+        input_shape = list(env.observation_space.shape)
+        #endE = 0.01
+    else:
+        env = GymEnvironment(envs[env_id][0], 3, env_class=envs[env_id][1], visualize=False, agent_history_length=1)
+        env2 = GymEnvironment(envs[env_id][0], 4, env_class=envs[env_id][1], visualize=False, agent_history_length=1)
+        num_actions = env.env.action_space.n
+        input_shape = list(env.env.observation_space.shape)
 
     if env_id in [1, 3, 6, 7]:
         num_episodes = 65000  # How many episodes of game environment to train network with.
         annealing_steps = 200000.  # How many steps of training to reduce startE to endE.
+        pre_train_steps = 10000  # How many steps of random actions before training begins.
+    elif env_id in [10]:
+        num_episodes = 1000
+        annealing_steps = 20000
+        pre_train_steps = 1000  # How many steps of random actions before training begins.
     else:
         num_episodes = 15000  # How many episodes of game environment to train network with.
         annealing_steps = 10000.  # How many steps of training to reduce startE to endE.
-    pre_train_steps = 10000  # How many steps of random actions before training begins.
+        pre_train_steps = 10000  # How many steps of random actions before training begins.
 
     succ_threshold = 82 if env_id in [1] else 100
 
@@ -362,6 +375,7 @@ def train_agent():
             ckpt = tf.train.get_checkpoint_state(path)
             saver.restore(sess, ckpt.model_checkpoint_path)
 
+        demo_data = []
         succ_epi = 0
         for epi in range(1, num_episodes + 1):
             if finish: break
@@ -371,26 +385,27 @@ def train_agent():
             d = False
             rAll = 0
             j = 0
+            epi_steps = 0
             # The Q-Network
-            while (j < max_epLength) and (
-            not d):  # If the agent takes longer than 100 moves to reach either of the blocks, end the trial.
+            while (not d):
                 j += 1
                 # Choose an action by greedily (with e chance of random action) from the Q-network
                 if np.random.rand(1) < e or total_steps < pre_train_steps:
-                    a = np.random.randint(0, 4)
+                    a = np.random.randint(0, num_actions)
                 else:
                     # if e == 0: print(a)
                     a = sess.run(mainQN.predict, feed_dict={mainQN.input: [s]})[0]
-                s1, r, d = env.step(a)
+                s1, r, d, _ = env.step(int(a))
                 s1 = s1.flatten()
                 total_steps += 1
+                epi_steps += 1
                 episodeBuffer.add(
                     np.reshape(np.array([s, a, r, s1, d]), [1, 5]))  # Save the experience to our episode buffer.
 
                 if total_steps > pre_train_steps:
                     if e > endE:
                         e -= stepDrop
-                        e = max(e, 0)
+                        e = max(e, endE)
 
                     # if e == 0:  env.visualize_on()
 
@@ -411,9 +426,21 @@ def train_agent():
                 rAll += r
                 s = s1
 
+            print("Episode {}, Steps: {}, Total steps: {}, Epsilon: {:.3f}, rewward: {}".format(epi, epi_steps, total_steps, e, rAll))
+            myBuffer.add(episodeBuffer.buffer)
+
+            if rAll>=500:
+                demo_data.extend(episodeBuffer.buffer)
+                print("****** ADDING DEMO DATA. REMAINING: ", 50 * 500 - len(demo_data))
+                if len(demo_data) >= 50*500:
+                    with open('demo_data.pkl', 'wb') as f:
+                        pickle.dump(demo_data, f)
+                    break
+
+
             if r == 1: succ_epi += 1
 
-            myBuffer.add(episodeBuffer.buffer)
+
             # jList.append(j)
             rList.append(rAll)
             # Periodically save the model.
@@ -435,16 +462,20 @@ def train_agent():
                 rList = []
                 succ_epi = 0
 
-                if e == 0:
-                    # Evaluate
-                    _succ_epi, _acc_rew = evaluate(env2, sess, mainQN.predict, mainQN.input)
-                    if _succ_epi >= succ_threshold:
-                        print("Evaluation success rate over 100 episodes: {}%; Total reward: {} ".format(_succ_epi,
-                                                                                                         _acc_rew))
-                        break
+                # if e == 0:
+                #     # Evaluate
+                #     _succ_epi, _acc_rew = evaluate(env2, sess, mainQN.predict, mainQN.input)
+                #     if _succ_epi >= succ_threshold:
+                #         print("Evaluation success rate over 100 episodes: {}%; Total reward: {} ".format(_succ_epi,
+                #                                                                                          _acc_rew))
+                #         break
 
         saver.save(sess, path + '/model-' + str(epi) + '.ckpt')
         print("Model saved")
         print("Training succes rate: {}%".format(acc_rew * 100.0 / epi))
 
         evaluate(env2, sess, mainQN.predict, mainQN.input, visualize=True, v_func=mainQN.Value)
+
+
+if __name__ == '__main__':
+    train_agent()

@@ -22,15 +22,15 @@ class EmulatorRunner(Process):
             if instruction is None:
                 break
             for i, (emulator, action) in enumerate(zip(self.emulators, self.variables[-1])):
-                #print("Emulator: EXECUTE ACTION: ", np.argmax(action))
-                new_s, reward, episode_over = emulator.next(action)
+                #print("Emulator ", i," EXECUTE ACTION: ", action)
+                new_s, reward, episode_over, info = emulator.step(int(action))
                 if episode_over:
-                    self.variables[0][i] = emulator.get_initial_state()
+                    self.variables[0][i] = emulator.reset()
                 else:
                     self.variables[0][i] = new_s
                 self.variables[1][i] = reward
                 self.variables[2][i] = episode_over
-                #print("Emulator: NEW STATE & Done:", np.argmax(self.variables[0][i].flatten()), episode_over)
+                #print("Emulator", i," NEW STATE & Done:", np.argmax(self.variables[0][i].flatten()), episode_over)
             count += 1
             self.barrier.put(True)
 

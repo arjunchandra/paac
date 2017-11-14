@@ -2,7 +2,7 @@ import numpy as np
 
 
 class BaseEnvironment(object):
-    def get_initial_state(self):
+    def reset(self):
         """
         Sets the environment to its initial state.
         :return: the initial state

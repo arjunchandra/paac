@@ -9,8 +9,6 @@ import numpy as np
 
 from schedules import LinearSchedule, PiecewiseSchedule
 from replay_buffer import *
-# from paac import PAACLearner
-# from train import get_network_and_environment_creator
 from demo_agent_corridor import *
 import logger_utils
 import tables
@@ -32,6 +30,8 @@ class SimplePDQFDLearner(ActorLearner):
     def __init__(self, network_creator, environment_creator, args):
         super(SimplePDQFDLearner, self).__init__(network_creator, environment_creator, args)
 
+        self.debug = args.debug
+        self.experiment_type = args.experiment_type
 
         self.double_q = args.double_q
         self.continuous_target_update = args.continuous_target_update
@@ -65,7 +65,7 @@ class SimplePDQFDLearner(ActorLearner):
 
         # Replay buffer
         self.use_exp_replay = args.use_exp_replay
-        self.batch_size = round(1.0 * args.batch_size / self.max_local_steps)
+        self.n_trajectories = round(1.0 * args.batch_size / self.max_local_steps)
         self.replay_buffer_size = args.replay_buffer_size
         # Create replay buffer
         self.prioritized = args.prioritized
@@ -73,35 +73,27 @@ class SimplePDQFDLearner(ActorLearner):
             self.prioritized_alpha = args.prioritized_alpha
             self.prioritized_beta0 = args.prioritized_beta0
             self.prioritized_eps = args.prioritized_eps
-            self.replay_buffer = PrioritizedReplayBuffer(self.replay_buffer_size, self.demo_trans_size, self.prioritized_alpha)
+            self.replay_buffer = PrioritizedReplayBuffer(self.replay_buffer_size, self.demo_trans_size, self.prioritized_alpha, n_emus=self.emulator_counts, debug =self.debug)
             self.beta_schedule = LinearSchedule(self.max_global_steps, initial_p=self.prioritized_beta0, final_p=1.0)
             # Function to return transition priority bonus
             self.set_p_eps = lambda x: self.prioritized_eps_d if x < self.demo_trans_size else self.prioritized_eps
         else:
-            self.replay_buffer = ReplayBuffer(self.replay_buffer_size, self.demo_trans_size)
+            self.replay_buffer = ReplayBuffer(self.replay_buffer_size, self.demo_trans_size, n_emus=self.emulator_counts, debug =self.debug)
 
-        if self.use_exp_replay:
-            #self.actions_sum = np.zeros((self.emulator_counts, self.num_actions))
-            self.y_batch = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.rewards = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.float64)
-            #self.actions = np.zeros((self.max_local_steps, self.emulator_counts, self.num_actions))
-            self.actions = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.episode_dones = np.zeros((self.max_local_steps, self.emulator_counts))
-        else:
-            #self.actions_sum = np.zeros((self.emulator_counts, self.num_actions))
-            self.y_batch = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.rewards = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.float64)
-            #self.actions = np.zeros((self.max_local_steps, self.emulator_counts, self.num_actions))
-            self.actions = np.zeros((self.max_local_steps, self.emulator_counts))
-            self.episode_dones = np.zeros((self.max_local_steps, self.emulator_counts))
+        self.y_batch = np.zeros((self.max_local_steps, self.emulator_counts))
+        self.rewards = np.zeros((self.max_local_steps, self.emulator_counts))
+        self.states = np.zeros([self.max_local_steps, self.emulator_counts] + list(self.state_shape), dtype=np.float64)
+        self.actions = np.zeros((self.max_local_steps, self.emulator_counts))
+        self.episode_dones = np.zeros((self.max_local_steps, self.emulator_counts))
 
+        tf.summary.scalar("Margin_loss", self.network.margin_loss)
+        tf.summary.scalar("Regularization_loss", self.network.reg_loss)
         self.summaries_op = tf.summary.merge_all()
         self.state_shape = None
         self.counter = 0
 
         self.experiment_type = args.experiment_type
+
 
 
     @staticmethod
@@ -119,8 +111,6 @@ class SimplePDQFDLearner(ActorLearner):
         else:
             action_indices = deterministic_actions
 
-        #new_actions = np.eye(num_actions)[action_indices]
-        #return new_actions #, network_output_q
         return action_indices
 
     def __choose_next_actions(self, states):
@@ -128,7 +118,7 @@ class SimplePDQFDLearner(ActorLearner):
         return SimplePDQFDLearner.choose_next_actions(self.network, self.num_actions, states, self.session, eps, self.stochastic)
 
     @staticmethod
-    def get_target_maxq_values(target_network, states, session, double_q=True, learning_network=None):
+    def get_target_maxq_values(target_network, states, session, double_q=True, learning_network=None, debug=False):
 
         if double_q:
             assert learning_network is not None, "Double Q-learning requires learning network for target calculation"
@@ -139,10 +129,11 @@ class SimplePDQFDLearner(ActorLearner):
             idx_best_action_from_learning_network = np.argmax(learning_network_q, axis=1)
             maxq_values = target_network_q[range(target_network_q.shape[0]), idx_best_action_from_learning_network]
 
-            #print("learning_network_q ", learning_network_q)
-            #print("idx_best_action_from_learning_network ", idx_best_action_from_learning_network)
-            #print("target_network_q", target_network_q)
-            #print("maxq_values ", maxq_values)
+            if debug:
+                print("learning_network_q ", learning_network_q)
+                print("idx_best_action_from_learning_network ", idx_best_action_from_learning_network)
+                print("target_network_q", target_network_q)
+                print("maxq_values ", maxq_values)
         else:
             target_network_q = session.run(target_network.output_layer_q,
                                            feed_dict={target_network.input_ph: states})
@@ -151,7 +142,7 @@ class SimplePDQFDLearner(ActorLearner):
         return maxq_values
 
     def __get_target_maxq_values(self, states):
-        return SimplePDQFDLearner.get_target_maxq_values(self.target_network, states, self.session, double_q=self.double_q, learning_network=self.network)
+        return SimplePDQFDLearner.get_target_maxq_values(self.target_network, states, self.session, double_q=self.double_q, learning_network=self.network, debug=self.debug)
 
 
     def update_target(self):
@@ -199,9 +190,7 @@ class SimplePDQFDLearner(ActorLearner):
 
     def init_buffer_with_demo_simple(self):
         logger.debug("Adding demonstration data from demo agent to replay buffer.")
-        df = self.demo_agent_folder
-        checkpoint_folder = os.path.join(df, 'checkpoints')
-        run_demo_agent(checkpoint_folder, self.replay_buffer, self.demo_trans_size)
+        run_demo_agent(self.demo_agent_folder, self.replay_buffer, self.demo_trans_size)
 
 
     def init_buffer_with_demo(self):
@@ -261,26 +250,18 @@ class SimplePDQFDLearner(ActorLearner):
 
     def get_trajectories_from_buffer(self):
         if self.prioritized:
-            experience = self.replay_buffer.sample_nstep(self.batch_size, beta=self.beta_schedule.value(self.global_step), n_step=self.max_local_steps)
+            experience = self.replay_buffer.sample_nstep(self.n_trajectories, self.max_local_steps, self.beta_schedule.value(self.global_step))
             (__states_t, __actions, __rewards, __states_tp1, __dones, _weights, _batch_idxes, _mask_margin_loss) = experience
         else:
-            experience = self.replay_buffer.sample_nstep(self.batch_size, n_step=self.max_local_steps)
+            experience = self.replay_buffer.sample_nstep(self.n_trajectories, self.max_local_steps)
             (__states_t, __actions, __rewards, __states_tp1, __dones, _batch_idxes, _mask_margin_loss) = experience
             _weights = np.ones((self.emulator_counts,))
 
         return (__states_t, __actions, __rewards, __states_tp1, __dones, _weights, _batch_idxes, _mask_margin_loss)
-        # return (np.swapaxes(__states_t, 0, 1),
-        #             np.swapaxes(__actions, 0, 1),
-        #             np.transpose(__rewards),
-        #             np.swapaxes(__states_tp1, 0, 1),
-        #             np.transpose(__dones),
-        #             _weights,
-        #             _batch_idxes,
-        #             _mask_margin_loss)
 
 
     def estimate_returns(self, next_state_maxq, rewards, episode_dones):
-        estimated_return = next_state_maxq #np.copy(next_state_maxq)
+        estimated_return = next_state_maxq
         episodes_over_masks = 1.0 - episode_dones.astype(np.float32)
         y = np.zeros_like(rewards)
         if self.use_exp_replay:
@@ -293,11 +274,8 @@ class SimplePDQFDLearner(ActorLearner):
                 y[t] = estimated_return
         return y
 
-    def run_train_step(self, states, actions, targets, mask_margin=0.0):
-        #flat_states = self.states.reshape([self.max_local_steps * self.emulator_counts] + list(self.states.shape)[2:])
-        #flat_y_batch = self.y_batch.reshape(-1)
-        #flat_actions = self.actions.reshape(self.max_local_steps * self.emulator_counts, self.num_actions)
-        n = self.batch_size if self.use_exp_replay else self.emulator_counts
+    def run_train_step(self, states, actions, targets, imp_weights, mask_margin=0.0):
+        n = self.n_trajectories if self.use_exp_replay else self.emulator_counts
         states = np.reshape(states, [self.max_local_steps * n] + list(states.shape)[2:])
         actions = np.reshape(actions, -1)
         targets = np.reshape(targets, -1)
@@ -305,72 +283,75 @@ class SimplePDQFDLearner(ActorLearner):
         lr = self.get_lr()
         feed_dict = {self.network.input_ph: states,
                      self.network.target_ph: targets,
+                     self.network.importance_weights_ph: imp_weights,
                      self.network.mask_margin_loss: mask_margin,
                      self.network.selected_action_ph: actions,
                      self.learning_rate: lr}
 
-        #_, summaries = self.session.run(
-        #   [self.train_step, self.summaries_op],
-        #    feed_dict=feed_dict)
-
-        _, output_layer_q, output_selected_action, td_error, loss, summaries = self.session.run(
-            [self.train_step, self.network.output_layer_q, self.network.output_selected_action, self.network.td_error,
-             self.network.loss, self.summaries_op],
+        _, output_layer_q, output_selected_action, loss, td_error, wt_margin_loss, summaries = self.session.run(
+            [self.train_step, self.network.output_layer_q, self.network.output_selected_action, self.network.loss,
+             self.network.td_error, self.network.wt_margin_loss, self.summaries_op],
             feed_dict=feed_dict)
 
-        #print("output_layer_q ", output_layer_q.shape, output_layer_q)
-        #print("output_selected_action ", output_selected_action.shape, output_selected_action)
-        #print("td_error ", td_error.shape, td_error)
-        #print("loss ", loss)
+        if self.debug:
+            print("output_layer_q ", output_layer_q.shape, output_layer_q)
+            print("output_selected_action ", output_selected_action.shape, output_selected_action)
+            print("td_error ", td_error.shape, td_error)
+            print("wt_margin_loss ", wt_margin_loss.shape, wt_margin_loss)
+            print("loss ", loss)
 
         self.summary_writer.add_summary(summaries, self.global_step)
         self.summary_writer.flush()
 
         self.counter += 1
 
+        return td_error
 
-    def train_from_replay_buffer(self, mask_margin=0.0):
-        #batched_steps = self.max_local_steps * self.emulator_counts
-        (s_t, a, r, s_tp1, dones, w, idx, m) = self.get_trajectories_from_buffer()
-        # #print(__s_t.shape, __a.shape, __r.shape, __s_tp1.shape, __dones.shape, _w.shape, len(_idx), len(_m))
-        # e.g. with Atari Breakout env, steps 5, batch size 32
-        # (5, 32, 84, 84, 4) (5, 32, 4) (5, 32) (5, 32, 84, 84, 4) (5, 32) (32,) 32 32
-        ##print(s_t.shape, a.shape, r.shape, dones.shape)
 
-        for i in range(s_t.shape[0]):
-            x = []
-            for j in range(s_t.shape[1]):
-                x.append(np.argmax(s_t[i, j, :].flatten()))
-                pass
-            #print("FROM BUFFER: St: ", x)
-            pass
-        #print("FROM BUFFER: Actions ", a)
-        # Calculate returns for all trajectories
-        s_tpn = s_tp1[:, -1, :]
-        #n = self.batch_size if self.use_exp_replay else self.emulator_counts
-        #s_tpn = np.reshape(s_tp1, [self.max_local_steps * n] + list(s_tp1.shape)[2:])
-        next_state_maxq = self.__get_target_maxq_values(s_tpn)
-
-        #np.copyto(self.rewards, r)
-        #np.copyto(self.states, s_t)
-        #np.copyto(self.actions, a)
-        #np.copyto(self.episode_dones, dones)
-
-        targets = self.estimate_returns(next_state_maxq, r, dones)
-        #print("Epi masks ", 1.0 - dones.astype(np.float32))
-        #print("Rewards ", r)
-        #print("Targets ", targets)
-        #if np.max(r)==1:
-        #    sys.exit(0)
-        self.run_train_step(s_t, a, targets, mask_margin=mask_margin)
-
-    def train_from_experience(self, shared_states):
+    def train_from_experience(self, shared_states, mask_margin=0.0):
         if self.use_exp_replay:
-            self.train_from_replay_buffer()
+            # demo_data_masks is 1 for each sample/trajectory coming from demo data, and 0 otherwise
+            (s_t, a, r, s_tp1, dones, imp_weights, idxes, demo_data_masks) = self.get_trajectories_from_buffer()
+
+            if self.debug:
+                for i in range(s_t.shape[0]):
+                    x = []
+                    for j in range(s_t.shape[1]):
+                        x.append(np.argmax(s_t[i, j, :].flatten()))
+                        pass
+                    print("FROM BUFFER: St: ", x)
+                    pass
+                print("FROM BUFFER: Actions ", a)
+                print("DEMO MASKS: ", demo_data_masks)
+                print("IDXES: ", idxes)
+
+            # Calculate returns for all trajectories
+            s_tpn = s_tp1[:, -1, :]
+            next_state_maxq = self.__get_target_maxq_values(s_tpn)
+            targets = self.estimate_returns(next_state_maxq, r, dones)
+
+            if self.debug:
+                print("Epi masks ", 1.0 - dones.astype(np.float32))
+                print("Rewards ", r)
+                print("Targets ", targets)
+
+            td_errors = self.run_train_step(s_t, a, targets, imp_weights, mask_margin=demo_data_masks)
+
+            if self.prioritized:
+                # Add bonus to demo transition priorities
+                # Obs! The indexes refer to the first sample on each trajectory. We can use the index of the first sample
+                # for all samples in a trajectory, in order to differentiate between demo and self-generated data
+                p_eps = np.array([self.set_p_eps(idx) for idx in idxes]) #for _ in range(self.max_local_steps) ])
+                if self.debug:
+                    print("P_EPS: ", p_eps)
+                    print("Shapes td_errors, p_eps: ", td_errors.shape, p_eps.shape)
+                new_priorities = np.abs(td_errors) + p_eps
+                self.replay_buffer.update_priorities(idxes, new_priorities)
         else:
             next_state_maxq = self.__get_target_maxq_values(shared_states)
             targets = self.estimate_returns(next_state_maxq, self.rewards, self.episode_dones)
-            self.run_train_step(self.states, self.actions, targets, mask_margin=0.0)
+            imp_weights = np.ones_like(targets)
+            self.run_train_step(self.states, self.actions, targets, imp_weights, mask_margin=mask_margin)
 
     def collect_experience(self, shared_states, shared_actions, shared_rewards, shared_episode_over):
         for t in range(self.max_local_steps):
@@ -398,16 +379,18 @@ class SimplePDQFDLearner(ActorLearner):
                 if episode_over:
                     self.emu_n_epi[emu] += 1
                     self.emu_acc_reward[emu] += self.total_episode_rewards[emu]
-                    if actual_reward == self.goal_reward: self.emu_epi_succ[emu] += 1
+                    self.emu_epi_succ[emu] += self.total_episode_rewards[emu]
                     if self.emu_n_epi[emu] % 100 == 0:
-                        logger.debug("{} steps. Emu {}: Epi. succ. rate: {}%, Acc. reward: {}, Epsilon: {}".format(self.global_step,
-                                                                                                                   emu,
-                                                                                                         self.emu_epi_succ[
-                                                                                                             emu],
-                                                                                                         self.emu_acc_reward[
-                                                                                                             emu],
-                                                                                                         self.exp_epsilon.value(
-                                                                                                             self.global_step)))
+                        logger.debug("{} steps. Emu {}: Epi. succ. rate: {:.2f}%, Epi. reward: {}, Acc. reward: {}, Epsilon: {:.3f}".format(self.global_step,
+                                                                                                                                            emu,
+                                                                                                                                            self.emu_epi_succ[
+                                                                                                                                                emu]/self.goal_reward,
+                                                                                                                                            self.total_episode_rewards[
+                                                                                                                                                emu],
+                                                                                                                                            self.emu_acc_reward[
+                                                                                                                                                emu],
+                                                                                                                                            self.exp_epsilon.value(
+                                                                                                                                                self.global_step)))
 
                         # emu_n_epi[emu] = 0
                         self.emu_epi_succ[emu] = 0
@@ -421,27 +404,25 @@ class SimplePDQFDLearner(ActorLearner):
                     self.summary_writer.flush()
                     self.total_episode_rewards[emu] = 0
                     self.emulator_steps[emu] = 0
-                    #self.actions_sum[emu] = np.zeros(self.num_actions)
+
 
         if self.use_exp_replay:
             for emu in range(self.emulator_counts):
-                s = []
-                for t in range((self.max_local_steps)):
-                    s.append(np.argmax(self.states[t,emu].flatten()))
-                    pass
-                #print("TO BUFFER: States: ", s)
-                #print("TO BUFFER: Actions: ", self.actions[:, emu])
+                if self.debug:
+                    s = []
+                    for t in range((self.max_local_steps)):
+                         s.append(np.argmax(self.states[t,emu].flatten()))
+                         pass
+                    print("TO BUFFER emu {}: States: {}".format(emu, s))
+                    print("TO BUFFER emu {}: Actions: {}".format(emu, self.actions[:, emu]))
 
                 for t in range((self.max_local_steps -1)):
                     self.replay_buffer.add(np.copy(self.states[t, emu]), np.copy(self.actions[t, emu]), np.copy(self.rewards[t, emu]),
-                                           np.copy(self.states[t + 1, emu]), np.copy(self.episode_dones[t, emu]))
-                    ##print("TO BUFFER: Action: ", self.actions[t, emu])
-                #self.states[0, emu] = np.zeros_like(self.states[0, emu])
+                                           np.copy(self.states[t + 1, emu]), np.copy(self.episode_dones[t, emu]), emu)
 
                 t = self.max_local_steps - 1 # Obs! Subtract 1 due to zero-based indexing
                 self.replay_buffer.add(np.copy(self.states[t, emu]), np.copy(self.actions[t, emu]), np.copy(self.rewards[t, emu]),
-                                       np.copy(shared_states[emu]), np.copy(self.episode_dones[t, emu]))
-                ##print("TO BUFFER: Action: ", self.actions[t, emu])
+                                       np.copy(shared_states[emu]), np.copy(self.episode_dones[t, emu]), emu)
 
     def train(self):
         """
@@ -455,71 +436,69 @@ class SimplePDQFDLearner(ActorLearner):
         self.update_target()
         logging.info("Synchronized learning and target networks")
 
-        envs = {
-            1: ('FrozenLake-v0', None, 1), # Last element reflects the reward received if the end goal is reached
-            2: ('FrozenLakeNonskid4x4-v0', None, 1),
-            3: ('FrozenLakeNonskid8x8-v0', None, 1),
-            4: ('CorridorSmall-v1', CorridorEnv, 1),
-            5: ('CorridorSmall-v2', CorridorEnv, 1),
-            6: ('CorridorActionTest-v0', CorridorEnv, 1),
-            7: ('CorridorActionTest-v1', ComplexActionSetCorridorEnv, 1),
-            8: ('CorridorBig-v0', CorridorEnv, 1),
-            9: ('CorridorFLNonSkid-v1', CorridorEnv, 1)
-        }
-        env_id = 9
-        self.goal_reward = envs[env_id][2]
-        eva_env = GymEnvironment(-1, envs[env_id][0], 3, env_class=envs[env_id][1], visualize=False,
-                                 agent_history_length=1)
-        _succ_epi, _acc_rew = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,
-                                       visualize=False, v_func=self.network.value)
-        logger.debug(
-            "Start - Evaluation success rate over 100 episodes: {}%; Total reward: {} ".format(_succ_epi, _acc_rew))
-
+        # Average reward over 100 episodes
+        self.goal_reward = 1 if self.experiment_type == 'corridor' else 500
 
         if self.demo:
-            # Fill replay buffer with demo data
-            if self.demo_db is not None:
-                self.init_buffer_with_db()
-            else:
-                # self.init_buffer_with_demo()
+            if self.experiment_type == 'cartpole':
+                import gym
+                eva_env = gym.make("CartPole-v1")
+                _succ_epi = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,
+                                               visualize=False, v_func=self.network.value, goal_reward=self.goal_reward)
+                logger.debug(
+                    "Before pre-training - Evaluation success rate over 100 episodes: {:.2f}%".format(
+                        _succ_epi))
+
+                import pickle
+                with open('demo.p', 'rb') as f:
+                    buffer = pickle.load(f)
+                for sample in buffer:
+                    self.replay_buffer.add_demo(sample[0], sample[1], sample[2], sample[3], sample[4])
+
+            elif self.experiment_type == 'corridor':
+                envs = {
+                    1: ('FrozenLake-v0', None, 1), # Last element reflects the reward received if the end goal is reached
+                    2: ('FrozenLakeNonskid4x4-v0', None, 1),
+                    3: ('FrozenLakeNonskid8x8-v0', None, 1),
+                    4: ('CorridorSmall-v1', CorridorEnv, 1),
+                    5: ('CorridorSmall-v2', CorridorEnv, 1),
+                    6: ('CorridorActionTest-v0', CorridorEnv, 1),
+                    7: ('CorridorActionTest-v1', ComplexActionSetCorridorEnv, 1),
+                    8: ('CorridorBig-v0', CorridorEnv, 1),
+                    9: ('CorridorFLNonSkid-v1', CorridorEnv, 1)
+                }
+                env_id = 9
+                self.goal_reward = envs[env_id][2]
+                eva_env = GymEnvironment(-1, envs[env_id][0], 3, env_class=envs[env_id][1], visualize=False,
+                                         agent_history_length=1)
+                _succ_epi = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,
+                                               visualize=False, v_func=self.network.value, goal_reward=self.goal_reward)
+                logger.debug(
+                    "Before pre-training - Evaluation success rate over 100 episodes: {:.2f}%".format(_succ_epi))
+
                 self.init_buffer_with_demo_simple()
 
-            # eva_env = GymEnvironment(-1, envs[env_id][0], env_class=envs[env_id][1], visualize=False,
-            #                          agent_history_length=1)
-            # _succ_epi, _acc_rew = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,
-            #                                visualize=False, v_func=self.network.value)
-            # logger.debug("Start - Evaluation success rate over 100 episodes: {}%; Total reward: {} ".format(_succ_epi, _acc_rew))
 
             # Pre-train using demonstration data
-            if self.global_step < self.pre_train_steps * batched_steps:
+            if self.global_step < self.pre_train_steps:
                 logger.debug("Pre-training...")
-                resume_step = int(self.global_step / batched_steps)
+                resume_step = self.global_step // (self.n_trajectories * self.max_local_steps)
                 for t in range(resume_step, self.pre_train_steps):
                     if t % 1000 == 0:
                         logger.debug(
                             "Pre-training batch step {} of {} complete".format(str(t), str(self.pre_train_steps)))
 
-                    self.batched_demo_training()
+                    self.train_from_experience(None, mask_margin=1.0)
 
                     if self.continuous_target_update or t % self.target_update_freq == 0:
                         self.update_target()
 
+                    self.global_step += self.n_trajectories * self.max_local_steps
 
-                        # _succ_epi, _acc_rew = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph, visualize=True, v_func=self.network.value)
-                        # logger.debug("After pre-training - Evaluation success rate over 100 episodes: {}%; Total reward: {} ".format(_succ_epi, _acc_rew))
-                        # sys.exit(0)
+                _succ_epi = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph, visualize=False, v_func=self.network.value, goal_reward=self.goal_reward)
+                logger.debug("After pre-training - Evaluation success rate over 100 episodes: {:.2f}%".format(_succ_epi))
 
-                        # OPTIONS for proceeding to train with emulators
-                        # 1. Proceede collecting new experiences in buffer.
-                        #    Train using the buffer without overwriting demo. When using demo data,
-                        #    do not mask the supervised loss.
-                        # OR
-                        # 2. Train using parallel experiences from emulators. Mask the supervised loss.
-                        #    Alternate between using demo data from buffer and new emulator data
-                        #    collected online in parallel.
-                        # Choosing OPTION 2.
 
-        # Train using emulator data (TODO: and demo data)
         logger.debug("Resuming training from emulators at Step {}".format(self.global_step))
         self.total_rewards = []
         self.emulator_steps = [0] * self.emulator_counts
@@ -528,12 +507,12 @@ class SimplePDQFDLearner(ActorLearner):
         self.emu_epi_succ = [0 for _ in range(self.emulator_counts)]
         self.emu_n_epi = [0 for _ in range(self.emulator_counts)]
 
+
         # state, reward, episode_over, action
-        variables = [(np.asarray([emulator.get_initial_state() for emulator in self.emulators], dtype=np.float64)),
+        variables = [(np.asarray([emulator.reset() for emulator in self.emulators], dtype=np.float64)),
                      (np.zeros(self.emulator_counts, dtype=np.float32)),
                      (np.asarray([False] * self.emulator_counts, dtype=np.float32)),
                      (np.zeros(self.emulator_counts, dtype=np.float32))]
-                     #(np.zeros((self.emulator_counts, self.num_actions), dtype=np.float32))]
 
         self.runners = Runners(EmulatorRunner, self.emulators, self.workers, variables)
         self.runners.start()
@@ -544,34 +523,18 @@ class SimplePDQFDLearner(ActorLearner):
 
             loop_start_time = time.time()
 
-            if np.random.uniform(0, 1) < self.demo_train_ratio:
-                # train with demo data
-                logger.debug("Training using demo data at Step {}".format(self.global_step))
-                self.batched_demo_training()
-            else:
-                # Collect experience
-                self.collect_experience(shared_states, shared_actions, shared_rewards, shared_episode_over)
+            # Collect experience
+            self.collect_experience(shared_states, shared_actions, shared_rewards, shared_episode_over)
     
-                if self.global_step > self.learning_start:
-                    self.train_from_experience(shared_states)
-                    #print(self.global_step)
-                    #sys.exit(0)
+            if self.global_step > self.learning_start:
+                self.train_from_experience(shared_states)
+                #print(self.global_step)
+                #sys.exit(0)
 
-            #if self.continuous_target_update or int(self.global_step / batched_steps) % self.target_update_freq == 0:
             if (self.global_step > self.learning_start) and (
                     self.continuous_target_update or self.global_step % self.target_update_freq == 0):
                 self.update_target()
 
-
-            # if self.counter % (2048 / self.emulator_counts) == 0:
-            #     curr_time = time.time()
-            #     global_steps = self.global_step
-            #     last_ten = 0.0 if len(self.total_rewards) < 1 else np.mean(self.total_rewards[-10:])
-            #     logger.info("Ran {} steps, at {} steps/s ({} steps/s avg), last 10 rewards avg {}"
-            #                  .format(global_steps,
-            #                          self.max_local_steps * self.emulator_counts / (curr_time - loop_start_time),
-            #                          (global_steps - global_step_start) / (curr_time - start_time),
-            #                          last_ten))
             self.save_vars()
 
         _succ_epi, _acc_rew = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,

@@ -34,6 +34,13 @@ class EnvironmentCreator(object):
             corridor_class = corridor_envs[args.game]
             env = GymEnvironment(-1, corridor_game_id, args.random_seed, env_class=corridor_class)
             self.num_actions = env.num_actions
-            self.state_shape = env.env.observation_space.shape
+            self.state_shape = env.shape
             del env
             self.create_environment = lambda i: GymEnvironment(i, corridor_game_id, args.random_seed, env_class=corridor_class)
+        else:
+            import gym
+            env = gym.make(args.game)
+            self.num_actions = env.action_space.n
+            self.state_shape = list(env.observation_space.shape)
+            del env
+            self.create_environment = lambda i: gym.make(args.game)

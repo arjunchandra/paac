@@ -85,7 +85,7 @@ class AtariEmulator(BaseEnvironment):
             self.frame_pool.new_frame(self.__get_screen_image())
         return reward
 
-    def get_initial_state(self):
+    def reset(self):
         """ Get the initial state """
         self.__new_game()
         for step in range(NR_IMAGES):
@@ -95,7 +95,7 @@ class AtariEmulator(BaseEnvironment):
             raise Exception('This should never happen.')
         return self.observation_pool.get_pooled_observations()
 
-    def next(self, action):
+    def step(self, action):
         """ Get the next state, reward, and game over signal """
 
         reward = self.__action_repeat(np.argmax(action))
@@ -103,7 +103,7 @@ class AtariEmulator(BaseEnvironment):
         terminal = self.__is_terminal()
         self.lives = self.ale.lives()
         observation = self.observation_pool.get_pooled_observations()
-        return observation, reward, terminal
+        return observation, reward, terminal, None
             
     def __is_terminal(self):
         if self.single_life_episodes:
@@ -118,7 +118,7 @@ class AtariEmulator(BaseEnvironment):
         return [1.0, 0.0]
 
     def reset_with_noops(self, noops=0):
-        observation = self.get_initial_state()
+        observation = self.reset()
         if noops != 0:
             for _ in range(random.randint(0, noops)):
                 observation, _, _ = self.next(self.get_noop())

@@ -64,7 +64,7 @@ if __name__ == '__main__':
     with tf.Session(config=config) as sess:
         checkpoints_ = os.path.join(df, 'checkpoints')
         network.init(checkpoints_, saver, sess)
-        states = np.asarray([environment.get_initial_state() for environment in environments])
+        states = np.asarray([environment.reset() for environment in environments])
         if args.noops != 0:
             for i, environment in enumerate(environments):
                 for _ in range(random.randint(0, args.noops)):

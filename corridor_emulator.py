@@ -781,8 +781,11 @@ class GymEnvironment(BaseEnvironment):
         self.game = game
 
         self.np_random, seed = seeding.np_random(seed)
-        
-    
+
+    @property
+    def shape(self):
+        return list(self.env.observation_space.shape)
+
     def get_legal_actions(self):
     	return self.gym_actions
 
@@ -792,7 +795,7 @@ class GymEnvironment(BaseEnvironment):
         else:
             return ["Left", "Down", "Right", "Up"][action_id] if action_id < 4 else "NoOp"
     
-    def get_initial_state(self):
+    def reset(self):
         s = self.env.reset()
         if self.visualize:
             self.env.render()
@@ -804,12 +807,12 @@ class GymEnvironment(BaseEnvironment):
     def visualize_off(self):
         self.visualize = False
     
-    def next(self, action):
+    def step(self, action):
         #s_t1, r_t, terminal, info = self.env.step(self.gym_actions[np.argmax(action)])
         s_t1, r_t, terminal, info = self.env.step(action)
         if self.visualize:
             self.env.render()
-        return s_t1, r_t, terminal #, info
+        return s_t1, r_t, terminal, info
 
     def get_noop(self):
         if self.game in ['CorridorActionTest-v1']:
@@ -817,12 +820,10 @@ class GymEnvironment(BaseEnvironment):
         else:
             return 4
 
-    def reset(self):
-        return self.reset_with_noops(0)
 
     def reset_with_noops(self, noops=0):
-        s = self.get_initial_state()
+        s = self.reset()
         if noops != 0:
             for _ in range(self.np_random.randint(0, noops)):
-                s, _, _ = self.next(self.get_noop())
+                s, _, _ = self.step(self.get_noop())
         return s
