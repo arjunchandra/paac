@@ -21,9 +21,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 
-class SimplePDQFDLearner(ActorLearner):
+class PDQFDLearner(ActorLearner):
     def __init__(self, network_creator, environment_creator, args):
-        super(SimplePDQFDLearner, self).__init__(network_creator, environment_creator, args)
+        super(PDQFDLearner, self).__init__(network_creator, environment_creator, args)
 
         self.game = args.game
         self.experiment_type = args.experiment_type
@@ -105,7 +105,7 @@ class SimplePDQFDLearner(ActorLearner):
 
     def __choose_next_actions(self, states):
         eps = self.exp_epsilon.value(self.global_step)
-        return SimplePDQFDLearner.choose_next_actions(self.network, self.num_actions, states, self.session, eps, self.stochastic)
+        return PDQFDLearner.choose_next_actions(self.network, self.num_actions, states, self.session, eps, self.stochastic)
 
     @staticmethod
     def get_target_maxq_values(target_network, states, session, double_q=True, learning_network=None):
@@ -126,7 +126,7 @@ class SimplePDQFDLearner(ActorLearner):
         return maxq_values
 
     def __get_target_maxq_values(self, states):
-        return SimplePDQFDLearner.get_target_maxq_values(self.target_network, states, self.session, double_q=self.double_q, learning_network=self.network)
+        return PDQFDLearner.get_target_maxq_values(self.target_network, states, self.session, double_q=self.double_q, learning_network=self.network)
 
 
     def update_target(self):
@@ -391,5 +391,5 @@ class SimplePDQFDLearner(ActorLearner):
         self.cleanup()
 
     def cleanup(self):
-        super(SimplePDQFDLearner, self).cleanup()
+        super(PDQFDLearner, self).cleanup()
         self.runners.stop()
