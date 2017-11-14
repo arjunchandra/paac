@@ -1,3 +1,30 @@
+"""
+Based on the code from Open AI
+
+The MIT License
+
+Copyright (c) 2017 OpenAI (http://openai.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+"""
+
 import numpy as np
 import random
 
@@ -8,7 +35,7 @@ from segment_tree import SumSegmentTree, MinSegmentTree
 
 
 class ReplayBuffer(object):
-    def __init__(self, size, dsize, n_emus=1, debug = False):
+    def __init__(self, size, dsize, n_emus=1):
         """Create Prioritized Replay buffer.
 
         Parameters
@@ -38,7 +65,6 @@ class ReplayBuffer(object):
         self._selfgen_size = self._emu_buffer_size * n_emus
         self._max_size = self._selfgen_size + dsize
         self._demo_size = dsize
-        #self._demo_size_minusone = self._demo_size - 1
 
         self._n_emu = n_emus
 
@@ -51,11 +77,6 @@ class ReplayBuffer(object):
 
         self._next_idx_emu = [0]*n_emus
         self._next_idx_demo = 0
-        # This will keep track of the actual index in self._storage where data is added. Needed for PrioritizedReplayBuffer
-        #self._next_idx = 0
-        #self._traj_id = 0
-
-        self.debug = debug
 
 
     def __len__(self):
@@ -74,15 +95,6 @@ class ReplayBuffer(object):
         if emu_id == 0 and self._n_samples < self._emu_buffer_size:
             self._n_samples += 1
 
-        if self.debug:
-            print("ADDING TO BUFFER emu {}: State".format(emu_id), np.argmax(self._storage[idx][0].flatten()))
-            s = []
-            for i in range(len(self._storage)):
-                if type(self._storage[i]) is not int:
-                    s.append(np.argmax(self._storage[i][0].flatten()))
-                else:
-                    s.append(-1)
-            print("STATES IN BUFFER: ", s)
         return idx
 
 
@@ -92,14 +104,6 @@ class ReplayBuffer(object):
 
         idx = self._next_idx_demo
         self._next_idx_demo = (self._next_idx_demo + 1) % self._demo_size
-        if self.debug:
-            s = []
-            for i in range(len(self._storage)):
-                if type(self._storage[i]) is not int:
-                    s.append(np.argmax(self._storage[i][0].flatten()))
-                else:
-                    s.append(-1)
-            print("BUFFER AFTER ADDING DEMO: ", s)
         return idx
 
 
@@ -150,7 +154,7 @@ class ReplayBuffer(object):
                 batch_dones.append(n_step_dones)
             except IndexError:
                 print("Something funky happened accessing replay storage.")
-        ##print("Inside buffer: ", np.array(batch_obses_t).shape)
+
         return [np.array(batch_obses_t), np.array(batch_actions), np.array(batch_rewards), np.array(batch_obses_tp1), np.array(batch_dones)], np.array(idxes)
 
     def _get_indexes(self, n):
@@ -162,10 +166,6 @@ class ReplayBuffer(object):
             # Obs! self._n_samples is the number of transitions on any emulator sub-buffer
             emu_idxes = np.array([random.randint(0, self._n_samples - 1) for _ in range(n)])
             idxes = buff_id * self._emu_buffer_size + emu_idxes
-            #print("Buff id", buff_id)
-            #print("emu_idxes", emu_idxes)
-            #print("idxes", idxes)
-
         elif self._n_samples == 0:
             # There is only demo data in the buffer, so we sample from those
             idxes = np.array([random.randint(0, self._demo_size -1) for _ in range(n)])
@@ -213,7 +213,8 @@ class ReplayBuffer(object):
             the end of an episode and 0 otherwise.
         """
         idxes, demo_mask = self._get_indexes(batch_size)
-        return self._retrieve_samples(idxes)
+        exp =  self._retrieve_samples(idxes)
+        return tuple(list(exp) + [np.ones_like(idxes), idxes, demo_mask])
 
     def sample_nstep(self, n_trajectories, n_steps):
         """Sample n_trajectories * n_steps experiences
@@ -250,19 +251,12 @@ class ReplayBuffer(object):
             n_step_done_mask[i] = 1 if trajectory sampled reaches 
             the end of an episode, and 0 otherwise.
         """
-        s=[]
-        for i in range(len(self._storage)):
-            if type(self._storage[i]) is not int:
-                s.append(np.argmax(self._storage[i][0].flatten()))
-        print("STATES IN BUFFER: ", s)
-
-
         traj_idxes, demo_mask = self._get_indexes(n_trajectories)
         trajectories, idxes = self._retrieve_n_step_trajectories(traj_idxes, n_steps)
-        return tuple(trajectories + [idxes, demo_mask])
+        return tuple(trajectories + [np.ones_like(idxes), idxes, demo_mask])
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, dsize, alpha, n_emus=1, debug = False):
+    def __init__(self, size, dsize, alpha, n_emus=1):
         """Create Prioritized Replay buffer.
 
         Parameters
@@ -293,8 +287,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._it_sum = SumSegmentTree(it_capacity)
         self._it_min = MinSegmentTree(it_capacity)
         self._max_priority = 1.0
-
-        self.debug = debug
 
     def add(self, *args, **kwargs):
         """See ReplayBuffer.add_effect"""
@@ -370,7 +362,8 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         idxes = self._sample_proportional(batch_size)
         batch_samples = self._retrieve_samples(idxes)
         weights = self._compute_weights(idxes, beta)
-        return tuple(list(batch_samples) + [weights, idxes])
+        demo_mask = (idxes < self._demo_size)
+        return tuple(list(batch_samples) + [weights, idxes, demo_mask])
 
     def sample_nstep(self, n_trajectories, n_steps, beta):
         """Sample Sample n_trajectories * n_steps experiences.
@@ -425,7 +418,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
         traj_idxes = self._sample_proportional(n_trajectories)
         batched_trajectories, idxes = self._retrieve_n_step_trajectories(traj_idxes, n_steps)
-        if self.debug: print("TRAJ. IDXES: ", traj_idxes)
         weights = self._compute_weights(idxes, beta)
         demo_mask = (idxes < self._demo_size)
         return tuple(batched_trajectories + [weights, idxes, demo_mask])

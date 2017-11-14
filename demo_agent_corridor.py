@@ -214,7 +214,7 @@ def evaluate(env, sess, q_max, input_ph, visualize=False, v_func=None, goal_rewa
             _s = _s1  # .flatten()
             acc_rew += _r
 
-    return (1.0 * acc_rew) / goal_reward
+    return 1.0* acc_rew / 100 #(1.0 * acc_rew) / goal_reward
 
 
 def run_demo_agent(path, replay_buffer, demo_trans_size):

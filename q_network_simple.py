@@ -1,7 +1,7 @@
 import tensorflow as tf
-from tensorflow.python.keras.models import Model
+#from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Dense, Flatten, Input, Lambda, Activation
-from tensorflow.python.keras import regularizers
+#from tensorflow.python.keras import regularizers
 from tensorflow.contrib.layers import layer_norm
 import numpy as np
 

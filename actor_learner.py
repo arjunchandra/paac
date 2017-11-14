@@ -23,6 +23,8 @@ class ActorLearner(Process):
 
         self.global_step = 0
 
+        self.environment_creator = environment_creator
+
         self.max_local_steps = args.max_local_steps
         self.state_shape = environment_creator.state_shape
         self.num_actions = args.num_actions
@@ -50,14 +52,9 @@ class ActorLearner(Process):
         self.gamma = args.gamma
         self.game = args.game
 
-        self.alg_type = args.alg_type
-        if self.alg_type == 'value':
-            self.network = network_creator(name='value_learning')
-            self.target_network = network_creator(name='value_target', learning_network=self.network)
-            self.target_update_freq = args.target_update_freq
-        else:
-            self.network = network_creator(name='local_learning')
-
+        self.network = network_creator(name='value_learning')
+        self.target_network = network_creator(name='value_target', learning_network=self.network)
+        self.target_update_freq = args.target_update_freq
 
         # Optimizer
         grads_and_vars = self.optimizer.compute_gradients(self.network.loss, self.network.params)
@@ -95,13 +92,6 @@ class ActorLearner(Process):
 
         self.session = tf.Session(config=config)
 
-        # if self.alg_type == 'value':
-        #     self.network_saver = tf.train.Saver(self.network.params + self.target_network.params)
-        # else:
-        #     self.network_saver = tf.train.Saver(self.network.params)
-        #
-        # self.optimizer_variables = [var for var in tf.global_variables() if optimizer_variable_names in var.name]
-        # self.optimizer_saver = tf.train.Saver(self.optimizer_variables, max_to_keep=1, name='OptimizerSaver')
         self.network_saver = tf.train.Saver()
 
         # Summaries
@@ -114,15 +104,19 @@ class ActorLearner(Process):
         if force or self.global_step - self.last_saving_step >= CHECKPOINT_INTERVAL:
             self.last_saving_step = self.global_step
             self.network_saver.save(self.session, self.network_checkpoint_folder, global_step=self.last_saving_step)
-            #self.optimizer_saver.save(self.session, self.optimizer_checkpoint_folder, global_step=self.last_saving_step)
 
 
-    def rescale_reward(self, reward):
-        """ Clip immediate reward """
-        if reward > 1.0:
-            reward = 1.0
-        elif reward < -1.0:
-            reward = -1.0
+    def rescale_reward(self, reward, type='log'):
+        if type == 'log':
+            reward = np.sign(reward) * np.log(1 + np.abs(reward))
+        elif type == 'normalize':
+            reward = 1.0 * reward / self.max_reward
+        else:
+            """ Clip immediate reward """
+            if reward > 1.0:
+                reward = 1.0
+            elif reward < -1.0:
+                reward = -1.0
         return reward
 
     def init_network(self):
@@ -138,14 +132,6 @@ class ActorLearner(Process):
 
         # This should restore both the local/learning network and the target network
         last_saving_step = self.network.init(self.network_checkpoint_folder, self.network_saver, self.session)
-
-#        if self.alg_type == 'value':
-#            self.target_network.init(self.network_checkpoint_folder, self.network_saver, self.session)
-
-        #path = tf.train.latest_checkpoint(self.optimizer_checkpoint_folder)
-        #if path is not None:
-        #    logger.info('Restoring optimizer variables from previous run')
-        #    self.optimizer_saver.restore(self.session, path)
 
         return last_saving_step
 

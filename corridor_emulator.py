@@ -534,7 +534,7 @@ class ComplexActionSetCorridorEnv(MyDiscreteEnv):
 
 register(
   id='CorridorToy-v1',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '1x4',
     'n_actions': 4
@@ -544,7 +544,7 @@ register(
 
 register(
   id='CorridorToy-v2',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '2x4',
     'n_actions': 4
@@ -554,7 +554,7 @@ register(
 
 register(
   id='CorridorFLNonSkid-v0',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '4x4_fl',
     'n_actions': 4,
@@ -567,7 +567,7 @@ register(
 
 register(
   id='CorridorFLNonSkid-v1',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '8x8_fl',
     'n_actions': 4,
@@ -581,7 +581,7 @@ register(
 
 register(
   id='CorridorSmall-v1',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '4x4',
     'n_actions': 4,
@@ -594,7 +594,7 @@ register(
 
 register(
   id='CorridorSmall-v2',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '4x4',
     'n_actions': 4,
@@ -608,7 +608,7 @@ register(
 
 register(
   id='CorridorSmall-v10',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '4x4',
     'n_actions': 10
@@ -617,7 +617,7 @@ register(
 )
 register(
   id='CorridorBig-v0',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9',
     'n_actions': 4,
@@ -630,7 +630,7 @@ register(
 
 register(
   id='CorridorBig-v5',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9',
     'n_actions': 5
@@ -640,7 +640,7 @@ register(
 
 register(
   id='CorridorBig-v10',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9',
     'n_actions': 10
@@ -650,7 +650,7 @@ register(
 
 register(
   id='MazeBig-v0',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9_maze',
     'n_actions': 4,
@@ -663,7 +663,7 @@ register(
 
 register(
   id='MazeBig-v1',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9_maze',
     'n_actions': 4,
@@ -676,7 +676,7 @@ register(
 
 register(
   id='MazeBig-v2',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': '9x9_maze_montezuma',
     'n_actions': 4,
@@ -689,7 +689,7 @@ register(
 
 register(
   id='CorridorActionTest-v0',
-  entry_point='gym_environment:CorridorEnv',
+  entry_point='corridor_emulator:CorridorEnv',
   kwargs={
     'map_name': 'action_test',
     'n_actions': 4,
@@ -702,7 +702,7 @@ register(
 
 register(
   id='CorridorActionTest-v1',
-  entry_point='gym_environment:ComplexActionSetCorridorEnv',
+  entry_point='corridor_emulator:ComplexActionSetCorridorEnv',
   kwargs={
     'map_name': 'action_test',
     'n_actions': 8,
