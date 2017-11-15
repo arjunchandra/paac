@@ -24,6 +24,7 @@ class ActorLearner(Process):
         self.global_step = 0
 
         self.environment_creator = environment_creator
+        self.network_creator = network_creator
 
         self.max_local_steps = args.max_local_steps
         self.state_shape = environment_creator.state_shape

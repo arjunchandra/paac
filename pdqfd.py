@@ -38,7 +38,6 @@ class PDQFDLearner(ActorLearner):
         self.demo = args.demo
         self.demo_db = args.demo_db
         self.demo_trans_size = args.demo_trans_size
-        self.demo_model_dir = args.demo_model_dir
         self.pre_train_steps = args.pre_train_steps
         self.prioritized_eps_d = args.prioritized_eps_d
 
@@ -153,29 +152,34 @@ class PDQFDLearner(ActorLearner):
         return np.frombuffer(shared, dtype).reshape(shape)
 
     def add_demo_data_to_buffer(self):
-        logger.debug("Adding demonstration data from db to replay buffer.")
-        import pickle
-        with open('demo.p', 'rb') as f:
-            buffer = pickle.load(f)
-        for sample in buffer:
-            self.replay_buffer.add_demo(sample[0], sample[1], sample[2], sample[3], sample[4])
+        if self.demo_db:
+            logger.debug("Adding demonstration data from db to replay buffer.")
+            import pickle
+            with open('demo.p', 'rb') as f:
+                buffer = pickle.load(f)
+            for sample in buffer:
+                self.replay_buffer.add_demo(sample[0], sample[1], sample[2], sample[3], sample[4])
 
-        # hdf5_file = tables.open_file(self.demo_db, mode='r')
-        # max_demo_size = hdf5_file.root.obs.shape[0]
-        #
-        # bsize = min(1000, max_demo_size)
-        # for i in range(0, min(max_demo_size, self.demo_trans_size), bsize):
-        #     obs = hdf5_file.root.obs[i:(i + bsize + 1)]
-        #     if i == 0:
-        #         self.state_shape = obs[i].shape
-        #     act_rews = hdf5_file.root.act_rew_done[i:(i + bsize + 1)]
-        #     for j in range(obs.shape[0] - 1):
-        #         self.replay_buffer.add(LazyFrames([obs[j].tolist()]),
-        #                                act_rews[j][0], act_rews[j][1],
-        #                                LazyFrames([obs[j + 1].tolist()]),
-        #                                float(act_rews[j][2]))
-        #     logger.debug("Added {} new samples.".format(obs.shape[0]))
-        # hdf5_file.close()
+            # hdf5_file = tables.open_file(self.demo_db, mode='r')
+            # max_demo_size = hdf5_file.root.obs.shape[0]
+            #
+            # bsize = min(1000, max_demo_size)
+            # for i in range(0, min(max_demo_size, self.demo_trans_size), bsize):
+            #     obs = hdf5_file.root.obs[i:(i + bsize + 1)]
+            #     if i == 0:
+            #         self.state_shape = obs[i].shape
+            #     act_rews = hdf5_file.root.act_rew_done[i:(i + bsize + 1)]
+            #     for j in range(obs.shape[0] - 1):
+            #         self.replay_buffer.add(LazyFrames([obs[j].tolist()]),
+            #                                act_rews[j][0], act_rews[j][1],
+            #                                LazyFrames([obs[j + 1].tolist()]),
+            #                                float(act_rews[j][2]))
+            #     logger.debug("Added {} new samples.".format(obs.shape[0]))
+            # hdf5_file.close()
+        else:
+            assert self.demo_agent_folder is not None, "A value has to be passed to either demo_db or demo_agent_folder"
+
+            raise Exception("Fetching demo data from pre-trained agent not implemented")
 
 
     def estimate_returns(self, next_state_maxq, rewards, episode_dones):
@@ -329,6 +333,10 @@ class PDQFDLearner(ActorLearner):
             logger.debug(
                 "Before pre-training - Average reward over 100 episodes: {:.2f}%".format(
                     _succ_epi))
+            perf_summary = tf.Summary(value=[tf.Summary.Value(tag="Performance",
+                                                         simple_value=_succ_epi)])
+            self.summary_writer.add_summary(perf_summary, self.global_step)
+            self.summary_writer.flush()
 
             self.add_demo_data_to_buffer()
 
@@ -350,6 +358,10 @@ class PDQFDLearner(ActorLearner):
 
                 _succ_epi = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph, visualize=False, v_func=self.network.value)
                 logger.debug("After pre-training - Average reward over 100 episodes: {:.2f}%".format(_succ_epi))
+                perf_summary = tf.Summary(value=[tf.Summary.Value(tag="Performance",
+                                                                  simple_value=_succ_epi)])
+                self.summary_writer.add_summary(perf_summary, self.global_step)
+                self.summary_writer.flush()
 
 
         logger.debug("Resuming training from emulators at Step {}".format(self.global_step))
@@ -387,6 +399,10 @@ class PDQFDLearner(ActorLearner):
                                        visualize=True, v_func=self.network.value)
         logger.debug(
             "End - Average reward over 100 episodes: {:.2f}%".format(_succ_epi))
+        perf_summary = tf.Summary(value=[tf.Summary.Value(tag="Performance",
+                                                          simple_value=_succ_epi)])
+        self.summary_writer.add_summary(perf_summary, self.global_step)
+        self.summary_writer.flush()
 
         self.cleanup()
 

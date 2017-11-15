@@ -128,7 +128,6 @@ def get_arg_parser():
     boolean_flag(parser, "demo", default=True, help="whether or not to use demonstration data")
     parser.add_argument("--demo_db", type=str, default=None, help="path to hdf5 file containing demo data")
     parser.add_argument("--demo_trans_size", type=int, default=int(10500), help="number of demo transitions")
-    parser.add_argument("--demo_model_dir", type=str, default=None, help="load demonstration model from this directory")
     boolean_flag(parser, "stochastic", default=True, help="whether or not to use stochastic actions according to models eps value")
     parser.add_argument('--margin_loss_coeff', default=1.0, type=float, help="margin loss coefficient", dest="margin_loss_coeff")
     parser.add_argument('--L2_reg_coeff', default=1e-5, type=float, help="l2 regularisation coefficient", dest="L2_reg_coeff")
@@ -141,7 +140,7 @@ def get_arg_parser():
     parser.add_argument("--batch_size", type=int, default=32, help="Number of transitions/steps to read from the exp. replay and train with")
 
     # Demo agent
-    parser.add_argument('-f', '--demo_agent_folder', type=str, help="Folder where demo agent is stored.", dest="demo_agent_folder")
+    parser.add_argument('--demo_agent_folder', type=str, default=None, help="Folder where demo agent is stored.", dest="demo_agent_folder")
     parser.add_argument('-tc', '--test_count', default='1', type=int, help="The amount of tests to run on the given network", dest="test_count")
     parser.add_argument('-np', '--noops', default=30, type=int, help="Maximum amount of no-ops to use", dest="noops")
     parser.add_argument('-se', '--serial_episodes', default='10', type=int, help="Number of serial episodes", dest="serial_episodes")
