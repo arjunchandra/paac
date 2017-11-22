@@ -100,7 +100,7 @@ class SimpleQNetwork(object):
                     self.mask_margin_loss = tf.placeholder(
                         "float32", None, name='mask_margin_loss') # 1. if demo data, else 0.
                     inverted_one_hot = tf.ones_like(selected_action) - selected_action
-                    expert_margin = tf.stop_gradient(self.output_layer_q) + inverted_one_hot * conf['expert_margin']
+                    expert_margin = self.output_layer_q + inverted_one_hot * conf['expert_margin']
                     expert_target = tf.reduce_max(expert_margin, axis=-1)
                     # margin_loss = tf.reduce_mean(tf.square(expert_target - output_selected_action))
                     self.margin_loss = tf.reduce_mean(expert_target - self.output_selected_action)
