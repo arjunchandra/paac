@@ -396,7 +396,7 @@ class PDQFDLearner(ActorLearner):
                 self.save_vars()
 
         _succ_epi = evaluate(eva_env, self.session, self.network.output_layer_q, self.network.input_ph,
-                                       visualize=True, v_func=self.network.value)
+                                       visualize=False, v_func=self.network.value)
         logger.debug(
             "End - Average reward over 100 episodes: {:.2f}%".format(_succ_epi))
         perf_summary = tf.Summary(value=[tf.Summary.Value(tag="Performance",
